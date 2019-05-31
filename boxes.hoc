@@ -1,0 +1,163 @@
+// $Id: boxes.hoc,v 1.20 2001/01/22 21:02:37 billl Exp $
+
+proc boxes () {}
+
+// factor(num) finds the factors that are closest together
+// NB: must be at top since declared external in template BX
+func factor () { local num, srt, ii
+  num = $1
+  srt = int(sqrt(num))
+  for (ii=srt;ii<num && num/ii!=int(num/ii);ii+=1) {}
+  if (ii>num/ii) ii=num/ii // return smaller factor
+  return ii
+}
+
+// template for putting up trays and decks
+begintemplate BX
+public mktray,mkdeck,name,boxes
+public min,max,attrnum,rows,cols
+external rv,gv,factor
+
+objref boxl, boxes[3], ob, gitem
+double min[1],max[1]
+strdef temp_string_,name
+
+proc init () {
+  min = -1 max = -1
+  boxl = new List()
+}
+
+//mktray(panattr) graph out from llist of a panattr
+proc mktray () { local ci, ri, gi, m1, m2, bi
+  attrnum=$2
+  ob = $o1.object($2)
+  cols=$4 rows=$3
+  if (numarg()==6) {xs=$5 ys=$6} else {xs=100 ys=50}
+  ri = 0 // count the rows
+  gi = 0 // count the graphs
+  boxes[0] = new VBox()
+  boxes[0].intercept(1)
+  name="                "
+  xpanel("",1)
+  xvarlabel(name)
+  xpanel()
+    for ri=0,rows-1 {
+    boxes[2] = new HBox()
+    boxl.append(boxes[2])
+    bi = boxl.count-1
+    boxl.object(bi).intercept(1)
+    for ci=0,cols-1 {
+      gitem = new Graph(0)
+      gitem.view(0,-100,1000,50,0,0,xs,ys)
+      ob.glist.append(gitem)
+      gi = gi+1
+    }
+    boxl.object(bi).intercept(0)
+    boxl.object(bi).map("")
+  }
+  boxes[0].intercept(0)
+  if (strcmp(name,"")==0) boxes[0].map(ob.filename) else {
+    boxes[0].map(name) }
+}
+
+proc mkdeck () { local rows, cols, ci, ri, gi, m1, m2
+  ob = $o1.object($2)
+  if (min==-1 || max==-1) {
+    m1 = 0 m2 = ob.llist.count()-1
+  } else { m1=min    m2=max }
+  cnt = m2-m1+1
+  cols=factor(cnt) rows=cnt/factor(cnt)
+  ri = 0 // count the rows
+  gi = 0 // count the graphs
+  boxes[0] = new VBox()
+  boxes[0].intercept(1)
+  xpanel("",1)
+  xbutton("Next","boxes[1].flip_to(decknum=decknum+1)")
+  xbutton("Previous","boxes[1].flip_to(decknum=decknum-1)")
+  xpanel()
+  boxes[1] = new Deck()
+  boxes[1].intercept(1)
+  for ri=0,rows-1 {
+    boxes[2] = new HBox()
+    boxl.append(boxes[2])
+    boxes[2].intercept(1)
+    for ci=0,cols-1 {
+      rv($2,gi+m1)
+      gi = gi+1
+    }
+    boxes[2].intercept(0)
+    boxes[2].map("")
+  }
+  boxes[1].intercept(0)
+  boxes[1].map("")
+  boxes[0].intercept(0)
+  boxes[0].map("Deck")
+  decknum = 0
+  boxes[1].flip_to(decknum)
+  if ($2!=0) {
+    for ii = 0,gi-1 { 
+      ob.glist.object(ii).label(0.3,0.5,ob.llist.object(ii).name)
+    }
+  }
+}
+
+endtemplate BX
+
+objref boxer, boxerl
+boxerl = new List()
+proc mktray () { 
+  if (numarg()==0) { print "mktray(attrnum,rows,cols[,xsize,ysize,label])"
+    print "Create a tray for attr panel ATTRNUM to superimpose upon."
+    return }
+  boxer = new BX()
+  boxerl.append(boxer)
+  if ($1>panobjl.count-1) {
+    attrlist(5,$1,"NEW","",printStep)
+  }
+  panobjl.object($1).super = 1
+  if (numarg()==4) { boxer.name=$s4 }
+  if (numarg()==6) { boxer.name=$s6 }
+  if (numarg()>3 && numarg()!=4) {
+    boxer.mktray(panobjl,$1,$2,$3,$4,$5)
+  } else {
+    boxer.mktray(panobjl,$1,$2,$3)
+  }
+  boxer=nil
+}
+
+proc rmtray () { local attrnum
+  attrnum=$1
+  if (boxerl.count<=1) boxerl.remove_all else {
+    for (ii=boxerl.count-1;ii>=0;ii-=1) {
+      if (boxerl.object(ii).attrnum==attrnum) boxerl.remove(ii) 
+    }}
+  remgrs(attrnum)
+  panobj.super=0
+}
+
+proc trsz () {
+  if (boxerl.count>0) for ltr (XO,boxerl) printf("%d:%d x %d\n",XO.attrnum,XO.rows,XO.cols)
+}
+
+proc mktrpanl () {
+  xgetargs("Make Tray","mktray","Which","rows","cols","xsize","ysize","0,2,3,100,50")
+}
+
+lastdisp = 0
+proc disptray () { local ii,jj,kk
+  if (numarg()==0) {print "disptray(attrnum[,cols])" return}
+  lastdisp=attrnum=$1
+  ii=panobjl.object(attrnum).llist.count 
+  if (numarg()==2) jj=$2 else jj=factor(ii)
+  kk=panobjl.object(attrnum).glist.count
+  mktray(attrnum,ii/jj,jj,100,50) 
+  grall(attrnum,0,ii-1,attrnum,kk)
+  for ltr(XO,panobjl.object(attrnum).glist) if(i1>=kk) { 
+    XO.size(&x[0]) 
+    XO.size(x[0],x[1],x[2],x[3]) }
+}
+
+proc redisptr () { 
+  if (numarg()==1) lastdisp=$1
+  geall(lastdisp) grall(lastdisp)
+}

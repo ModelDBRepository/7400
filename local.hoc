@@ -1,0 +1,38 @@
+//  $Header: /usr/site/nrniv/simctrl/hoc/RCS/local.hoc,v 1.12 2002/05/01 18:52:55 billl Exp $
+//
+//  This file contains local modifications to nrnoc.hoc and default.hoc
+//
+//  Users should not edit nrnoc.hoc or default.hoc.  Any local 
+//  changes to these files should be made in this file.
+
+// ------------------------------------------------------------
+//* MODIFICATIONS TO NRNOC.HOC
+// The procedures declared here will overwrite any duplicate
+// procedures in nrnoc.hoc.
+// ------------------------------------------------------------
+
+//*MODIFICATIONS TO DEFAULT.HOC
+//
+// Vars added here may not be handled properly within nrnoc.hoc
+//------------------------------------------------------------
+
+//** String defaults
+
+//** Simulation defaults
+
+long_dt     = .001      // msec 
+
+objref sfunc,tmpfile
+sfunc = new StringFunctions()   // needed to use is_name()
+tmpfile = new File()  // check for existence before opening a user's local.hoc file
+
+proc write_comment () {
+  tmpfile.aopen("index")
+  tmpfile.printf("%s\n",$s1)
+  tmpfile.close()  
+}
+
+func asin () { return atan($1/sqrt(1-$1*$1)) }
+func acos () { return atan(sqrt(1-$1*$1)/$1) }
+
+condor_run = 0  // define for compatability

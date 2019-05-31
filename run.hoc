@@ -1,0 +1,647 @@
+// $Id: run.hoc,v 1.260 2002/05/14 18:44:28 billl Exp $
+
+{ cvode_local(0) cvode_active(0) dt = 0.25 }
+// if (1) {  cvode.atol(1e-12)  cvode.rtol(1e-4) } else {
+//           cvode.atol(1e-4)   cvode.rtol(0)    }
+cvode_what()
+byte_store=1
+
+// if we're going backwards need to start with output and compare with input
+objref ioro[2],lamio[2]
+{ioro[0]=ovl ioro[1]=ivl lamio[0]=lam[0] lamio[1]=lam[1]}
+// ioro[0] = new List()
+// stimpatt=26
+// {npattold = npatt npatt=stimpatt}
+// mkorthog(ioro[0],szout,3)
+// npatt=npattold 
+objref plsl
+stimpatt = ioro[0].count
+plsl = new List("PULSE")
+objref stimvec
+stimvec = vec.c
+
+//* prpatt(vec) presents pattern
+objref ipattv
+ipattv = new Vector()
+ipattv.resize(160)
+ipattv.fill(0)
+ipatt = 0  // the chosen pattern for presentation
+proc prpatt () { local ii,jj
+  ii = int(rdm.uniform(0,159))
+  while (ipattv.x[ii]==1) { ii=int(rdm.uniform(0,159)) }
+  print t,ii
+  ipattv.x[ii]=1
+  for ltr(XO,plsl) {
+    if (i1==ii) {
+      XO.amp = PAMP
+    } else {
+      XO.amp = 0.0
+    }
+  }
+}
+
+//* outputData
+proc initMisc1() {
+  if (cvode_change()) nprl()
+  revec(stimvec,42,150,20,19,15,129,92,88,59,113,149,6,72,46,114,93,142,141,9)
+  stimvec.reverse // since pop from end
+  gotime = trig.start-10
+}
+
+proc initMisc2() {
+}
+
+proc outputData() {
+  if (t>gotime) { 
+    prpatt()
+    gotime += trig.interval
+  }
+}
+
+//** rewrite prpatt to choose according to a list
+proc prpatt () { local ii,jj
+  ii=popvec(stimvec)
+  print t,ii
+  for ltr(XO,plsl) {
+    if (i1==ii) {
+      XO.amp = PAMP
+    } else {
+      XO.amp = 0.0
+    }
+  }
+}
+
+//* Printlist stuff
+proc nprl () {
+  cvode_what()
+  printlist.remove_all()
+  record(new List("NRN"),"soma.v(0.5)","vec")
+}
+nprl()
+
+//* grast() puts filled squares on 1s and 0's on 0s
+proc grast () { local i,flag,grnum
+  grnum=tstop/2
+  if (numarg()==2) { flag=1 } else { flag=0 }
+  sprint(grvecstr,"%s%02d:%02d",datestr,runnum-1,ipatt)
+  panobjl.object(0).glist.object(0).label(0.1,0.8,grvecstr)
+  for lvtr(XO,&x,panobjl.object(0).glist,$o1) {
+    if (x==1) { XO.mark(grnum,40,"S",14,2,1)
+    } else    { XO.mark(grnum,40,"o",12) }
+    if (flag) if ($o2.x[i1]==1) { XO.mark(tstop/2,40,"S",8) }
+  }
+}
+
+//* comparison of BAM results to vecs
+//** prsets([num]) print out position of setbits in ivl/ovl
+proc prsets () { local num
+  if (numarg()==1) { num=$1 } else { num=-1 }
+  for ltr2(XO,YO,ovl,ivl,&y) {
+    if (num>-1 && y!=num) continue
+    printf("**** %d ****\n",y)
+    ind.resize(0) 
+    for vtr2(&x[0],&x[1],XO,YO) {
+      if (x[0]==1) pushvec(ind,i1) 
+      if (x[1]==1) pushvec(ind,i1+80) 
+    } 
+    ind.sort
+    ind.printf 
+  }
+}
+
+//** prvset(vec) print out setbit inds for a given vec
+proc prvset () { ind.indvwhere($o1,">",0) ind.printf }
+
+//** determine spike times and copy vecs into iv,tv
+// burstlen=100 // only look at spikeing occurring every 100 ms
+// spkts(0,2) // save inds (vec1) and times (vec)
+// objref iv,tv
+// iv=new Vector() tv=new Vector()
+// iv.copy(vec1) tv.copy(vec)
+
+
+/*
+testrun1(12,0)
+mktray(0,8,10)
+setrange(0,0,tstop,-100,50)
+setrange(0,0)
+lamio[0].veclist(tmplist2) // the input
+show(tmplist2)
+grast(ioro[0].object(ipatt))
+lamio[1].veclist(tmplist) // the output
+show(tmplist)
+grast(ioro[1].object(ipatt))
+*/
+
+//* show() run out a vector and then superimpose the squares
+proc show() { 
+  geall(0)
+  for ltr2(XO,YO,$o1,panobj.glist) {
+    XO.plot(YO,printStep,panobj.curcol,panobj.line)
+  }
+}
+
+proc precall () { printf("%d fires at %g\n",$1,t) }
+proc precall () { }
+
+//* pattwh() tell which indices should be turned on
+proc pattwh () { local p1,pa
+  if (numarg()==1) { pa = $1 } else { pa = ipatt }
+  XO = ivl.object(pa) YO = ovl.object(pa)
+  p1 = allocvecs(1)
+  printf("Pattern #%d\n",pa)
+  mso[p1].indvwhere(XO,"==",1)
+  printf("Input  locations: ")
+  mso[p1].printf
+  mso[p1].indvwhere(YO,"==",1)
+  printf("Output locations: ")
+  mso[p1].printf
+  dealloc(p1)
+}
+
+proc run1 () { startsw() run() print stopsw() }
+
+//* testrun() run through all the patterns and compare output
+proc testrun () { local ii,jj,p1,p2,p3,ham,min,max
+  if (numarg()==2) { min=$1 max=$2} else { min=0 max=npatt-1 }
+  veclist.remove_all()
+  lam[0].veclist(tmplist)
+  p1 = allocvecs(3,szout) p2=p1+1 p3=p2+1
+  mso[p1].resize(max-min)  mso[p1].resize(0)
+  for ipatt=min,max {
+    ipattv = ivl.object(ipatt)
+    run()
+    pushvec(mso[p1],rdplist(tmplist,mso[p2],mso[p3]))
+    savevec(mso[p3])
+  }
+  print ""  mso[p1].printf  print "mean=",mso[p1].mean
+  dealloc(p1)
+}
+
+//* testrun1() just test 1 of them
+// this is currently entry point for testing system!!!
+proc testrun1 () { local ii,jj,p1,p2,p3,p4,ham,pwr
+  if (numarg()==0) { print "  testrun1(patt#[,#flips])" 
+    print "  With 1 arg, run() already done and just compare vecs." return }
+  lamio[1].veclist(tmplist) // output
+  p1 = allocvecs(4)
+  p2=p1+1 p3=p2+1 p4=p3+1
+  mso[p2].resize(szinp) mso[p3].resize(szout)
+  ipatt=$1
+  ipattv = ioro[0].object(ipatt) // use as input
+  if (numarg()==2) { 
+    if ($2>0) { 
+      mso[p1].copy(ipattv)
+      pwr = 0
+      while (pwr <= szinp/2+10) {
+        mso[p1].flipbits(mso[p2],$2) // flip them in the copy not the original
+        pwr = mso[p1].sum
+      }
+      ipattv = mso[p1]      
+      ipattv.vpr
+      print "Vector power=",ipattv.sum
+    }
+    run() print "" }
+  mso[p2].resize(szout)
+  rdplist(tmplist,mso[p2],mso[p4]) // scan the list for firing
+  if (1) { savevec(mso[p4]) }
+  ham = mso[p2].hamming(ioro[1].object(ipatt),mso[p3]) // compare to output
+  toutp(ipatt,ham,ioro[1].object(ipatt),mso[p2],mso[p3])
+  dealloc(p1)
+}
+
+// print out everything you'd want to know about the matches
+proc toutp () {
+  print " #",$1,"  HAMMING=",$2
+  printf("TARG ")
+  $o3.vpr
+  printf("OUTP ")
+  $o4.vpr
+  printf("DIFF ")
+  for vtr(&x,$o5) {if (x) { printf("*") } else { printf(" ") }}
+  printf("\n")
+}
+
+//* rdplist(list,vec[,vec1]) reads each vtrace in list and sets vec entries to 1 if firing there
+// will fill vec1 in with actual spike times
+thresh = 0  // threshold in mV for detecting a spike
+thresht = 150 // threshold time for determining whether a spike time is early (1) or late (0)
+proc rdplist() { local ii,max,tme,ham
+  $o2.resize(0)  
+  if (numarg()==3) { $o3.resize(0) }
+  for ltr(XO,$o1) {
+    tme = XO.indwhere(">",thresh) * printStep // time of first spike    
+    if (numarg()==2) { pushvec($o3,tme) }
+    if (tme<0) { tme=1e10 } // no spikes were found
+    max = (tme < thresht)
+    pushvec($o2,max)
+  }
+}
+
+//* rdplist1([min,max]) runs through veclist
+proc rdplist1 () { local min,max,ii,val,p1,p2
+  p1 = allocvecs(2,npatt) p2=p1+1
+  print mso[p2].size
+  if (numarg()==2) { min=$1 max=$2} else { min=0 max=npatt-1 }
+  if (veclist.count != max-min+1) { printf("ERROR rdplist1 %d\n",max-min+1) return }
+  for ltr(XO,veclist) {
+    mso[p1].resize(0)
+    for vtr(&x,XO) { pushvec(mso[p1],(x < thresht)) }
+    pushvec(mso[p2],ovl.object(min).hamming(mso[p1]))
+    min += 1
+  }
+  print ""  mso[p2].printf  print "mean=",mso[p2].mean  
+  dealloc(p1)
+}
+
+//* arraynum(STR,NAME,TERM)
+// return the NAME array number for STR where string contains TERM
+// returns -1 if does not fit 
+proc arraynum() { local l1,l2,l3
+  temp_string_ = ""
+  if (sfunc.substr($s1,$s2) != 0) { return }
+  if (sfunc.substr($s1,$s2) == -1) { return }
+  sfunc.tail($s1,$s2,temp_string_)
+  sfunc.right(temp_string_,1) // remove '\['
+  sfunc.head(temp_string_,"\\]",temp_string_)
+}
+
+//* variance ()
+// calculate variance by moving mean from vec.x[i] to x
+// NB: binom() changed
+proc variance () { local i
+  i = 0
+  print "NB: must set up vec with means in order to calc stdev's."
+  tot = fac(szinp)/fac(iflip)^2 // the total number of vectors
+  for (BVBASE=-1.5;BVBASE<=0.9;BVBASE=BVBASE+0.1) {
+    mean = vec.x[i]
+    binom(iflip)
+    i=i+1
+  }
+}
+
+//* check out questionable identity
+// log of M!/(M/m)!^m
+func fh() { return logfac($1)-$2*logfac($1/$2) }
+func lcb() { return logfac($1)-logfac($1-$2)-logfac($2) }
+func cb() { return exp(logfac($1)-logfac($1-$2)-logfac($2)) }
+func pm() { return exp(logfac($1)-logfac($1-$2)) }
+// compare with binomial expansion to the m power
+proc idnty () { local M,m,i,j,s1,F
+  M = $1
+  m = $2
+  F = int(M/m)
+  if (F!=M/m) { printf("ERROR: %d not divisible by %d.\n",M,m) return }
+  s1 = 0
+  for i=0,F {
+    a = exp(m*lcb(F,i))
+    s1 = s1 + a
+  }
+  a = exp(fh(M,m))
+  print s1," ",a," ",s1-a
+}
+
+//* binom(num) where num is F - the number of flips
+// now calculates out the expected value
+func binom () { local num,i,j,s1,s2,s3,ni,nf,full
+  num = $1
+  s1 = s2 = s3 = 0
+  nf = fac(num)
+  for i=0,num { // doesn't make any difference if include X.X or not (eg 1,num)
+    ni = num-i
+    a = nf/fac(ni)/fac(i)
+    a = a*a/tot
+    s3 = s3 + a*(((ni*BVBASE*BVBASE+ ni + 2*i*BVBASE) - mean)^2)
+    s1 = s1 + a*(ni*BVBASE*BVBASE+ ni + 2*i*BVBASE)
+  }
+  full = num*BVBASE*BVBASE + num // num*1*1 actually
+  printf("%g\t\t%g\t\t%g\t\t%g\t\t%g\n",BVBASE,s1,sqrt(s3),full,full/s1)
+  return s1
+}
+
+//* compdots (): compare dotprods
+// do allocvecs first
+proc compdots () { local i,j,k,s1,s2,last,bnm,ll
+  ll = 0
+  mkiovecs(ivl,ovl)    
+  last = BVBASE
+  for (BVBASE=-1.2;BVBASE<=-0.8;BVBASE=BVBASE+0.1) {
+    for ltr(XO,ivl) { XO.sw(last,BVBASE) }
+    s1=s2=0
+    for ltr(XO,ivl) {
+      for i=(i1+1),ivl.count-1 {
+        YO=ivl.object(i)
+        if (!eqobj(XO,YO)) {
+          pushvec(mso[ll],XO.dot(YO))
+        }
+      }
+    }
+    //    bnm = binom(iflip)
+    //    printf("%g\t\t%g\t\t%g\t\t%g\t\t%g\n",BVBASE,XO.dot(XO),s1/s2,bnm,XO.dot(XO)/bnm)
+    last = BVBASE
+    ll = ll+1
+  }
+}
+
+//* proc dotprods() { 
+proc dotprods() { local sum,n,min,max,ham,sum2,dot
+  sum=0  sum2=0
+  n = 0
+  for ltr(XO,ovl) {
+//  for ltr(XO,tmplist) 
+    sum=0 n=0
+    min=1e10 max=-1e10
+    for ltr(YO,ovl) { 
+      if (! eqobj(XO,YO)) {
+        ham = XO.hamming(YO) 
+        dot = XO.dot(YO) 
+//      print XO," ",YO," ",XO.dot(YO)," ",ham
+//        printf("%d ",XO.hamming(YO))
+        if (ham>max) { max=ham }
+        if (ham<min) { min=ham }
+//        sum = sum+XO.hamming(YO)  n=n+1
+        sum = sum+XO.dot(YO)  n=n+1
+      }
+    }
+    print XO," ",min," ",max," ",sum/n
+    sum2 = sum2+sum
+  }
+  print sum2/n/ovl.count
+}
+
+//* stats() runs some statistics on performance
+stat_param = 1
+proc stats() { local ii,jj,p1,p2,norm
+  vseed(545777)  // make it reproducible for now
+  rs = $1  // just run once now since not remaking ivl/ovl
+  p1 = allocvecs(2,500)  p2=p1+1
+  for (szout=50;szout<=100;szout+=2) for (cvg=1;cvg<=4;cvg+=1) {
+    norm = 100/szout
+    mso[p1].resize(0)
+    for ii=1,rs {
+      szinp = cvg*szout
+      npatt = int((cvg^0.2*(szinp*szout)^0.5)/stat_param)
+      strecre()
+      for ltr2(XO,YO,ivl,ovl) {
+        kala1(test,mat,XO,0)
+        pushvec(mso[p1],test.hamming(YO))
+      }
+      printf("%d:%d/%d N=%d stats(%d)=%g +/- %g\n",\
+             cvg,szinp,szout,npatt,rs,mso[p1].mean*norm,mso[p1].stdev*norm)
+      pushvec(mso[p2],mso[p1].mean*norm)
+    }
+  }
+  printf("stat_param=%d %d cases: %g +/- %g\n",stat_param,mso[p2].size,mso[p2].mean,mso[p2].stdev)
+  dealloc(p1)
+}
+
+// strecre() - create input and output vecs, mat and inhv
+proc strecre() {
+  if (numarg()==1) { 
+    if ($1==-1) { printf("szinp=%d,szout=%d,conv=%g,npatt=%d\n",szinp,szout,szinp/szout,npatt)
+      return
+    } else { vseed($1) }
+  }
+  test.resize(szout)
+  crosstalk(0)
+  mkiovec(ivl,szinp)
+  mkiovec(ovl,szout)
+  makemat(mat,ivl,ovl,0)
+  makeinh(inhv,ovl,0)
+}
+
+//* proc nontarg ()
+proc nontarg () { local jj,kk,p0,p1,p2,p3,p4,p5,p6,ham2,ham1,szi1,szf
+  szf = 50
+  szi1 = szf+1
+  ind.indgen(0,szf,1)
+  tmpfile.aopen(output_file)
+  p0 = allocvecs(7,szinp)
+  p1=p0+1 p2=p1+1 p3=p2+1 p4=p3+1 p5=p4+1 p6=p5+1
+  mso[p2].resize(szout)
+  mso[p5].resize(szi1*npatt)
+  mso[p6].resize(szi1*npatt)
+  for ltr(YO,ovl) { // npatt rows go through input/output pairs
+    print YO
+    prtime()
+    for jj=0,szf {  // cols change from 0 to half the bits
+      mso[p3].resize(szinp[0]) mso[p4].resize(szinp[0])
+      mso[p3].copy(ivl[0].object(i1))
+      mso[p3].flipbits(mso[p4],jj) // flip them in the copy not the original
+      ipattv = mso[p3]
+      run()
+      rdplist(test[0])
+      ham1 = test[0].hamming(YO) // calc hamming distance from target
+      ham2 = test[0].sum // calc activity in the output
+      mso[p5].mset(i1,jj,szi1,ham1)  // save the value
+      mso[p6].mset(i1,jj,szi1,ham2)  // save the value
+    }
+  }
+  mso[p4].resize(npatt)
+  mso[p0].resize(szi1) mso[p1].resize(szi1)
+  mso[p2].resize(szi1) mso[p3].resize(szi1)
+  for ii=0,szf { 
+    mso[p4].mcol(mso[p5],ii,szi1)
+    mso[p2].x[ii] = mso[p4].mean
+    mso[p3].x[ii] = mso[p4].stdev
+    mso[p4].mcol(mso[p6],ii,szi1)
+    mso[p0].x[ii] = mso[p4].mean
+    mso[p1].x[ii] = mso[p4].stdev
+  }
+  //  printf("hamming: mso[%d],mso[%d]; sum: mso[%d],mso[%d] (mean,sdev)\n",p2,p3,p0,p1)
+  tmpfile.printf("\n\"h %d %g\n",conva,kalap)
+  vprf(ind,mso[p2],mso[p3])
+  tmpfile.printf("\n\"s %d %g\n",conva,kalap)
+  vprf(ind,mso[p0],mso[p1])
+  tmpfile.close
+}
+
+//* proc nontargm () original nontarg for simple single mat
+// gradually increase the distance from an each input and look at
+// distance (ham) or power (sum) from the associated output
+proc nontargm () { local jj,kk,p1,p2,p3,p4,ham,ham2,szi1,szf
+  rs=$1
+  szf = 20
+  szi1 = szf+1
+  ind.resize(szi1*npatt)
+  p1 = allocvecs(4,szinp)  
+  p2=p1+1 p3=p2+1 p4=p3+1
+  mso[p2].resize(szout)
+  mso[p3].resize(szinp) mso[p4].resize(szinp)
+  for ltr(YO,ovl) { // npatt rows go through input/output pairs
+    for jj=szf,szf {  // cols change from 0 to half the bits
+      veclist.remove_all
+      mso[p3].copy(ivl.object(i1))
+      mso[p3].flipbits(mso[p4],jj) // flip them in the copy not the original
+      kala1(test,mat,mso[p3],0)
+      ham = test[0].hamming(YO) // calc hamming distance from target
+      //      ham = test[0].sum // calc activity in the output
+      ham = ham/szout*100
+      if (i1<10) { printf("%g ",ham) }
+      ind.mset(i1,jj,szi1,ham)  // save the value
+    }
+  }
+  mso[p1].resize(npatt)
+  mso[p2].resize(szi1) mso[p3].resize(szi1)
+  for ii=0,szf { 
+    mso[p1].mcol(ind,ii,szi1)
+    mso[p2].x[ii] = mso[p1].mean
+    mso[p3].x[ii] = mso[p1].stdev
+  }
+  printf("mso[%d] has means; mso[%d] has stdevs\n",p2,p3)
+  dealloc(p1)
+}
+
+//* kala (testvec,mnum)
+// kala = kohonen-anderson linear associator
+// process the vector through the linear associator
+proc kala () { local mnum
+  for mnum=0,convn-1 {
+    kala1(test[mnum],mat[mnum],$o1.object(mnum),mnum)  // excitation
+    if (mnum>0) { test[0].add(test[mnum]) }
+  }
+  test[0].thresh(kalap)
+}
+
+proc kala1 () { local mnum
+  $o1.mmult($o2,$o3)  // excitation
+  $o1.add(inhv[$4])      // inhibition
+  $o1.thresh((BVBASE+1)/2)   // thresholding
+}
+
+//* proc testmat ()
+// testmat([MAT#,INV#]) test mat MAT# with INV#, comparing output with OUV#
+// default is to combine all mats (also with MAT#=-1), and try all INV#
+proc testmat () { local ii,jj,p1,p2,ham,mnum,just1,min,max
+  if (numarg()>0) { just1=$1 } else { just1=-1 }
+  if (numarg()>1) { min=$2 max=$2 } else { min=0 max=ovl.count-1}
+  p1 = allocvecs(2)  p2=p1+1
+  mso[p2].resize(szout)
+  for jj=min,max {
+    YO = ovl.object(jj)
+    tmplist.remove_all
+    for ii=0,convn-1 { tmplist.append(ivl[ii].object(jj)) }
+    if (just1==-1) { kala(tmplist) 
+    } else { kala1(test[0],mat[just1],ivl[just1].object(jj),just1) }
+    ham = test[0].hamming(YO,mso[p2])
+    pushvec(mso[p1],ham)
+  }
+  if (min==max) {
+    toutp(min,ham,YO,test,mso[p2])
+  } else {   
+    mso[p1].printf  
+    printf("mean/sdev=%g / %g\n",mso[p1].mean,mso[p1].stdev) }
+  dealloc(p1)
+}
+
+//* proc testorthog () rewrite of testmat to handle the sparse
+//   orthogonal matrices
+// testmat(INV#) test mat MAT# with INV#, comparing output with OUV#
+proc testorthog () { local ii,jj,p1,p2,ham,mnum,just1,min,max
+  if (numarg()>0) { min=$1 max=$1 } else { min=0 max=ovl.count-1}
+  p1 = allocvecs(2)  p2=p1+1
+  mso[p2].resize(szout)
+  for jj=min,max {
+    YO = ovl.object(jj)
+    test[0].mmult(mat,ivl.object(jj))
+    test[0].thresh(0)
+    ham = test[0].hamming(YO,mso[p2])
+    pushvec(mso[p1],ham)
+  }
+  if (min==max) {
+    toutp(min,ham,YO,test,mso[p2])
+  } else {   
+    mso[p1].printf  
+    printf("mean/sdev=%g / %g\n",mso[p1].mean,mso[p1].stdev) }
+  dealloc(p1)
+}
+
+//* proc testorthog2 () testorthog for mat[1] which takes ovl to ivl
+// testmat(INV#) test mat MAT# with INV#, comparing output with OUV#
+proc testorthog2 () { local ii,jj,p1,p2,ham,mnum,just1,min,max
+  if (numarg()>0) { min=$1 max=$1 } else { min=0 max=ivl.count-1}
+  p1 = allocvecs(2)  p2=p1+1
+  mso[p2].resize(szout)
+  for jj=min,max {
+    YO = ivl.object(jj)
+    test[0].mmult(mat[1],ovl.object(jj))
+    test[0].thresh(0)
+    ham = test[0].hamming(YO,mso[p2])
+    pushvec(mso[p1],ham)
+  }
+  if (min==max) {
+    toutp(min,ham,YO,test,mso[p2])
+  } else {   
+    mso[p1].printf  
+    printf("mean/sdev=%g / %g\n",mso[p1].mean,mso[p1].stdev) }
+  dealloc(p1)
+}
+
+// show hamming distances between input and output vectors
+proc compvecs() { local n1,n2
+  n1=$1 n2=$2
+  printf("hamming inputs:%d outputs:%d\n",\
+         ivl.object(n1).hamming(ivl.object(n2)),\
+         ovl.object(n1).hamming(ovl.object(n2)))
+}
+
+// generate ave ham distances for a given i/o pair or ave for all pairs
+func asiovs() { local cmp,hami,hamo,p1,p2,p3,min,max,ret,xx
+  if (numarg()==1) { min=$1 max=$1} else { min=0 max=npatt-1 }
+  p1 = allocvecs(3,npatt*npatt) p2=p1+1 p3=p2+1
+  for ii=min,max {
+    xx = 0
+    for ltr2(XO,YO,ivl,ovl) {
+      if (xx!=ii) {
+        hami = ivl.object(ii).hamming(XO)
+        hamo = ovl.object(ii).hamming(YO)
+        pushvec(mso[p1],hami) pushvec(mso[p2],hamo)
+        pushvec(mso[p3],hami + szinp/szout*hamo) // normalize for size diff
+      }
+      xx+=1
+    }
+  }
+  printf("invec mean/sdev: %g / %g\n",mso[p1].mean,mso[p1].stdev)
+  printf("ouvec mean/sdev: %g / %g\n",mso[p2].mean,mso[p2].stdev)
+  printf("combo mean/sdev: %g / %g\n",mso[p3].mean,mso[p3].stdev)
+  ret = mso[p3].mean
+  dealloc(p1)
+  return ret
+}
+
+proc showtest() { local ii
+//  newPlot(0,npatt,0,20)
+  for ii=0,convn-1 {
+    dealloc()
+    kalap = ii+0.5
+    testmat() // comment dealloc out of testmat() in order to show
+//    mso[0].mark(graphItem,1,sym[ii].s,6,ii+1)
+  }
+}
+  
+
+ /*
+// compare output without thresholding
+for ltr2(XO,YO,ovl,veclist) {
+  for vtr2(&x,&y,XO,YO) {printf("%g ",x-y) }
+  printf("\n\n")
+}
+*/
+//* move lists into arrays
+objref rr[npatt],ou[npatt],in[npatt]
+for ltr(XO,ivl) { in[i1] = XO }
+for ltr(XO,ovl) { ou[i1] = XO }
+for ltr(XO,veclist) { rr[i1] = XO }
+
+//* proc row(), col() 
+proc row () {
+  ind.resize(szinp)
+  ind.mrow(mat,$1,szinp)
+  ind.printf
+}
+
+proc col () {
+  ind.resize(szout)
+  ind.mrow(mat,$1,szinp)
+  ind.printf
+}

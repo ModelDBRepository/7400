@@ -1,0 +1,330 @@
+// $Id: syncode.hoc,v 1.53 2002/04/18 18:33:32 billl Exp $
+
+proc syncode () {}
+
+//* setup
+load_file("decvec.hoc","decvec")
+objref ncl, cells[10] // enough room for 10 cell types
+objref CTYP[1],STYP[1] // for err messages involving cell and synapse types
+ncl = new List()
+strdef syn1,syn2
+
+thresh = -20
+// for ltr(XO,cvode.netconlist("", "", "")) print XO.precell,XO.postcell,XO.syn
+//* synapse linking
+//** geolink(s1,s2,s3) s1 for presyns and s2 for postsyns, connect s3's
+// connects a layer to another assuming 1 dim netgeom
+proc geolink() { local ii
+  if (numarg()==0) { print "\tgeolink(s1,s2,s3,v_conn)"
+    print "  make connections from s1 to s2 connecting onto s3 type PPs."
+    print "  vector_connect gives the prob of connection according to cell number"
+    return
+  }
+  sprint(temp_string_,"XO.soma ncl.append(new NetCon(&v(.5), YO.%s))",$s3)
+  for ltr (XO,new List($s1)) { // presyn list
+    for lvtr (YO,&x,new List($s2),$o4) { // postsyn list and vector
+      if (x==1) { // connect
+        print "connecting ",XO," to ",YO
+        execute(temp_string_)
+      }
+    }
+    $o4.rotate(1)
+  }
+  XO=nil YO=nil
+}
+      
+//** nowraplk(s1,s2,s3) s1 for presyns and s2 for postsyns, connect s3's
+// connects a layer to another assuming 1 dim netgeom
+proc nowraplk() { local cnt
+  if (numarg()==0) { print "\tnowraplk(s1,s2,s3,v_conn,dist)"
+    print "  make connections from s1 to s2 connecting onto s3 type PPs."
+    print "  like geolink() statt no wraparound, only look out by dist from the cell"
+    return
+  }
+  sprint(temp_string_,"XO.soma ncl.append(new NetCon(&v(.5), YO.%s))",$s3)
+  dist=$5
+  tmplist=new List($s2)
+  cnt=tmplist.count
+  for ltr (XO,new List($s1),&y) { // presyn list
+    for ii=y-dist,y+dist {
+      if (ii>=0 && ii<cnt) if ($o4.x[ii]==1) {
+        YO=tmplist.object(ii)
+        print "connecting ",XO," to ",YO
+        execute(temp_string_)
+      }
+    }
+    $o4.rotate(1)
+  }
+}
+//** synlink(s1,s2,s3,[gmax,del]) s1 for presyns and s2 for postsyns, connect s3's
+//  eg synlink("PYR","INH","AMPA")
+// provides full connectivity
+proc synlink() { local gm,dl
+  if (numarg()==0) { print "\tsynlink(s1,s2,s3)"
+    print "  make connections from all of type s1 to one of type s2 "
+    print "     only connecting onto s3 type PPs."
+    print "  Matching done with regexps."
+    return
+  }
+  if (numarg()==5) { gm=$4 dl=$5 } else { gm=0 dl=1 }
+  tmplist = new List($s3) // list of postsyn point processes 
+  for ltr (XO,new List($s1)) { // presyn list
+    for ltr (YO,tmplist) {
+      if (pp_loc(YO,$s2,syn2)) { 
+        sfunc.head(syn2,"\\.",syn2)
+        sprint(syn1,"%s",XO)
+        if (strcmp(syn1,syn2)!=0) { // don't allow self connects
+          print "connecting ",XO," to ",syn2
+          XO.soma ncl.append(new NetCon(&v(.5), YO, thresh, gm, dl))
+        }
+      }
+    }
+  }
+}
+      
+//** synconn(l1,s2,s3,%div) l1 list of presyns and s2 for postsyns, connect s3's with given density
+// eg synconn(PYRi,PYRi,AMPAi,pmat[PYR][PYR])
+// provides % connectivity based on %div==%conv
+objref convec,convec1,convec2  // vectors to count how much div is from each nrn
+convec = new Vector(100)
+convec1 = convec.c // a scratch vector
+convec2 = convec.c // copy of convec used temporarily to blot out self-connect and redundent connects
+proc synconn () { local pdiv,con,div,ii,jj,pre,prn,post,pon,sy,targ
+  if (numarg()==0) { print "\tsynconn(pre,post,mech,div)" return }
+  pre=$1 post=$2 
+  if (numarg()==3) { sy=0 pdiv=$3 } else { sy=$4 pdiv=$3 }
+  prn = cells[$1].count  // number of possible presyn sources
+  pon = cells[$2].count  // number of possible postyn targets
+  div = int(pdiv*pon)  // # out from each
+  con = int(pdiv*prn+1) // # into each; leave a little extra room
+  if (pdiv==1) con=-1 // flag for full connectivity
+  printf("\tdiv=%d,conv=%d\n",div,con)
+  convec.resize(pon) convec.fill(0) // counter for convergence
+  for ii=0,prn-1 { // sources
+    convec2.copy(convec) convec2.x[ii]=1e10 // block self-connect
+    for jj=1,div {
+      targ = pickpost(pon,con) // pick desired target
+      printf("SRC: %s -> TRG: %s (%s)\n",cells[pre].object(ii),cells[post].object(targ),cells[post].object(targ).syns(sy))
+      cells[pre].object(ii).conn(cells[post].object(targ).syns(sy))
+    }
+  }
+}
+
+proc synconn2 () { local pdiv,con,div,ii,jj,pre,prn,post,pon,sy,targ
+  if (numarg()==0) { print "\tsynconn(pre,post,mech,div)" return }
+  pre=$1 post=$2 
+  if (numarg()==3) { sy=0 pdiv=$3 } else { sy=$3 pdiv=$4 }
+  prn = cells[$1].count  // number of possible presyn sources
+  pon = cells[$2].count  // number of possible postyn targets
+  div = int(pdiv*pon)  // # out from each
+  con = int(pdiv*prn+1) // # into each; leave a little extra room
+  if (pdiv==1) con=-1 // flag for full connectivity
+  printf("\tdiv=%d,conv=%d\n",div,con)
+  convec.resize(pon) convec.fill(0) // counter for convergence
+  for ii=0,prn-1 { // sources
+    convec2.copy(convec) convec2.x[ii]=1e10 // block self-connect
+    for jj=1,div {
+      targ = pickpost(pon,con) // pick desired target
+      printf("SRC: %s -> TRG: %s (%s)\n",cells[pre].object(ii),cells[post].object(targ),cells[post].object(targ).syns(sy))
+      cells[pre].object(ii).conn(cells[post].object(targ).syns(sy))
+    }
+  }
+}
+      
+//*** pickpost() tries to reduce divergence variance
+// pickpost(postlist,maxcon,YO)
+// maxcon == -1 means to ignore convergence
+// MUST do convec.resize() and convec.fill(0) before using
+func pickpost () { local ran, maxcon, maxpo, min, indx
+  maxcon = $2  // max convergence to be allowed
+  maxpo = $1   // number of postsyn choices
+  if (maxcon == -1) $o3 = $o1.object(fran(0,maxpo)) // just choose one randomly
+  min = convec2.min  // convec should start all 0's
+  if (min >= maxcon) { // all full up
+    printf("Pickpost full WARNING: %d %d\n",min,maxdiv) vlk(convec2) }
+  convec1.indvwhere(convec2,"==",min)  // look for all the smallest to fill up first
+  inx = convec1.x[fran(0,convec1.size-1)]
+  convec.x[inx]+=1
+  convec2.x[inx]=1e10 // block from reconnecting here
+  return inx
+}
+
+proc syn1to1 () { local pre,post,syn
+  pre=$1 post=$2
+  if (numarg()==3) syn=$3 else syn=0
+  if (cells[pre].count !=cells[post].count) { 
+    printf("\tERROR: 1-to-1 connectivity requires same # of %s (=%d) and %s (=%d).\n",\
+           CTYP[pre].s,cells[pre].count,CTYP[post].s,cells[post].count) return }
+  for ltr2(XO,YO,cells[pre],cells[post]) {
+    printf("SRC: %s -> TRG: %s (%s)\n",XO,YO,YO.syns(syn))
+    XO.conn(YO.syns[syn])
+  }
+}
+ 
+//** simple netconnect routines: netconn(), netgen()
+proc netconn () { local pre,post,syn,pri,poi
+  pre=$1 post=$2 
+  if (numarg()==5) { syn=$3 pri=$4 poi=$5 } else { syn=0 pri=$3 poi=$4 }
+  cells[pre].object(pri).conn(cells[post].object(poi).syns[syn])
+}
+
+proc netgen () { ncl.append(new NetCon($o1, $o2)) }
+
+//** syncopy() copies from one set of syns to another for colocalization
+proc syncopy () { 
+  if (numarg()==0) { printf("syncopy(to_type,[]): copy from type, post/type, pre/post/type\n") return }
+  sprint(temp_string_,"XO.precell.soma ncl.append(new NetCon(&v(.5),XO.postcell.%s",$s1)
+  if (numarg()==1) tmplist = cvode.netconlist("", "" , $s2)
+  if (numarg()==2) tmplist = cvode.netconlist("", $s2, $s3)
+  if (numarg()==3) tmplist = cvode.netconlist($s2, $s3, $s4)
+  for ltr(XO,tmplist) execute(temp_string_)
+}
+      
+//* synapse setting
+//** scale gmax
+proc synscgmax () {
+  for ltr(XO,cvode.netconlist("" , "", $s1)) { XO.weight *= $2 }
+}
+//** set/get gmax
+proc synsetgmax () {
+  if (numarg()==0) { print "synsetgmax(pre,post,type,wt)"
+  } else if (numarg()==2) {for ltr(XO,cvode.netconlist("" , "", $s1)) XO.weight=$2
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist("" , $s1, $s2)) XO.weight=$3
+  } else if (numarg()==4) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) XO.weight=$4
+  } else { print "ERROR: too many args" }
+}
+
+proc syngetgmax () {
+  if (numarg()==1) {
+    if (strcmp($s1,"help")==0) { printf("type,post/type,pre/post/type\n") } else {
+      for ltr(XO,cvode.netconlist("" , "", $s1)) printf("%g ",XO.weight) }
+  } else if (numarg()==2) {for ltr(XO,cvode.netconlist("" , $s1, $s2)) printf("%g ",XO.weight)
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) printf("%g ",XO.weight)
+  } else for ltr(XO,cvode.netconlist("","","")) printf("%g ",XO.weight)
+  print ""
+}
+ 
+//** set/get delay
+proc synsetdel () {
+  if (numarg()==2) {for ltr(XO,cvode.netconlist("" , "", $s1)) XO.delay=$2
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist("" , $s1, $s2)) XO.delay=$3
+  } else if (numarg()==4) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) XO.delay=$4
+  } else { print "ERROR: too many args" }
+}
+
+proc syngetdel () {
+  if (numarg()==1) {for ltr(XO,cvode.netconlist("" , "", $s1)) printf("%g ",XO.delay)
+  } else if (numarg()==2) {for ltr(XO,cvode.netconlist("" , $s1, $s2)) printf("%g ",XO.delay)
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) printf("%g ",XO.delay)
+  } else for ltr(XO,cvode.netconlist("","","")) printf("%g ",XO.delay)
+  print ""
+}
+ 
+//** set/get thresh
+proc synsetthr () {
+  if (numarg()==1) {for ltr(XO,cvode.netconlist("" , "", "")) XO.threshold=$1
+  } else if (numarg()==2) {for ltr(XO,cvode.netconlist($s1 , "", "")) XO.threshold=$2
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist($s1, "", $s2)) XO.threshold=$3
+  } else if (numarg()==4) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) XO.threshold=$4
+  } else { print "ERROR: too many args" }
+}
+
+proc syngetthr () {
+  if (numarg()==1) {for ltr(XO,cvode.netconlist($s1 , "", "")) printf("%g ",XO.threshold)
+  } else if (numarg()==2) {for ltr(XO,cvode.netconlist($s1, "", $s2)) printf("%g ",XO.threshold)
+  } else if (numarg()==3) {for ltr(XO,cvode.netconlist($s1 , $s2, $s3)) printf("%g ",XO.threshold)
+  } else for ltr(XO,cvode.netconlist("","","")) printf("%g ",XO.threshold)
+  print ""
+}
+ 
+//** synremove: remove post, pre/post, pre/post/type; synshow
+proc synremove () {
+  if (numarg()==0) { printf("synremove: remove post, pre/post, pre/post/type\n") return }
+  if (numarg()==1) tmplist = cvode.netconlist("", $s1 , "")
+  if (numarg()==2) tmplist = cvode.netconlist("", $s1, $s2)
+  if (numarg()==3) tmplist = cvode.netconlist($s1 , $s2, $s3)
+  if (tmplist.count>0) for ltr(XO,tmplist) ncl.remove(ncl.index(XO))
+  tmplist = nil // need to remove these references too
+  if (numarg()==1) tmplist = cvode.netconlist("", $s1 , "")
+  if (numarg()==2) tmplist = cvode.netconlist("", $s1, $s2)
+  if (numarg()==3) tmplist = cvode.netconlist($s1 , $s2, $s3)
+  if (tmplist.count>0) for ltr(XO,tmplist) printf("ERROR: %s removed from ncl but still exists\n",XO)
+  tmplist = nil
+}
+  
+proc synshow () { 
+  sprint(temp_string_,"x=XO.%s",$s2)
+  for ltr(XO,cvode.netconlist("" , "", $s1)) { execute(temp_string_) printf("%g ",x) }
+  print ""
+}
+ 
+//* informational procs
+//** proc print_pp_location(PP), from doc/html/refman/nocmodl.html
+proc print_pp_location() { local x //arg1 must be a point process
+   x = $o1.get_loc()
+   sectionname(section)
+   printf("%s located at %s(%g)\n", $o1, section, x)
+   pop_section()
+}
+//** pp_loc(PP,LOC,SCRATCH) returns true if point process PP is located in LOC (regexp match)
+func pp_loc () { local x //arg1 must be a point process
+   x = 0
+   $o1.get_loc()
+   if (numarg()==3) { sectionname($s3) }
+   ifsec $s2 { x = 1 }
+   pop_section()
+   return x
+}
+ 
+//** ndivo, ncono, sdivo, scono: objects; ndivs, ncons, sdivs, scons: strings
+func ndivo () { return cvode.netconlist($o1, "", "").count }
+func ncono () { return cvode.netconlist("", $o1, "").count }
+proc sdivo () {for ltr(XO,cvode.netconlist($o1, "", "")) prsxo() }
+proc scono () {for ltr(XO,cvode.netconlist("", $o1, "")) prsxo() }
+func ndivs () { return cvode.netconlist($s1, "", "").count }
+func ncons () { return cvode.netconlist("", $s1, "").count }
+proc sdivs () { for ltr(XO,cvode.netconlist($s1, "", "")) prsxo() }
+proc scons () { 
+  if (numarg()==0) for ltr(XO,cvode.netconlist("", "", ""))  prsxo()
+  if (numarg()==1) for ltr(XO,cvode.netconlist("", $s1, ""))  prsxo()
+  if (numarg()==2) for ltr(XO,cvode.netconlist("", $s1, $s2)) prsxo()
+  if (numarg()==3) for ltr(XO,cvode.netconlist($s1, $s2,$s3)) prsxo()
+}
+ 
+// print pre,post,syntype,threshold,weight,delay
+proc prsxo () {
+  if (isobj(XO.precell,"NULLobject")) {
+    printf("%s->%s (%s) (t%g,w%g,d%g)\n",XO.pre,XO.postcell,XO.syn,XO.threshold,XO.weight,XO.delay)
+  } else {
+    printf("%s->%s (%s) (t%g,w%g,d%g)\n",XO.precell,XO.postcell,XO.syn,XO.threshold,XO.weight,XO.delay)
+  }
+}
+//* misc and commentary
+// con=absolute convergence number, div=absolute div number
+// con = %con * pre
+// div * pre = con * post = S (total synapses)
+// %div = div/post = S/(pre*post) = con/pre = %con
+// div = %con * post
+// maxdiv = int((1 + var) * div)
+ 
+//** vari returns randomly chosen $1+/-$2
+func frani () { return int(rdm.uniform($1,$2+1)) }
+func uvari () { return $1 - $1*$2 + (rdm.uniform(0,1) * 2 * $1*$2) }
+func gvari () { return $1 - (rdm.normal(0,1) * $1*$2) }
+//** latlink() gives wrap-around
+proc latlink () { local reach,ii
+  reach=$2
+  $o1.fill(0)
+  if (numarg()==3) $o1.x[0]=$3 // connect within the column
+  for ii=1,reach {
+    $o1.x[ii]=1
+    $o1.x[$o1.size-ii]=1
+  }
+}
+
+//** clearsyns() 
+proc clearsyns () { 
+  for ltr(XO,ncl) XO.active(0)
+  ncl.remove_all 
+  for ltr(XO,new List("NetCon")) printf("**** CLEARSYN WARNING %s STILL EXISTS ****\n",XO)
+}

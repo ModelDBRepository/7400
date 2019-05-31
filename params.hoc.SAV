@@ -1,0 +1,48 @@
+// $Id: params.hoc,v 1.113 2002/05/15 15:08:38 billl Exp $
+
+dt          = .25
+printStep = dt
+tstop   = 5000
+celsius     = 37.0
+seed = 518139
+v_init       = -60.
+
+//* CHANNELS
+forsec "NRN" { 
+  insert Pass
+  g_Pass = 3e-5
+  insert naf
+  gmax_naf = 0.3
+  insert kdr
+  gmax_kdr = 0.25
+}
+
+//* SYNAPSES
+synsetgmax("AMPA",0.083333333)
+synscgmax("AMPA",12e-3)
+synsetgmax("GABAA",0.083333333)
+synscgmax("GABAA",15e-3)
+Erev_AMPA = -20
+Erev_GABAA = -100
+Cdur_AMPA = 1
+Cdur_GABAA = 1
+Alpha_AMPA = 1
+Alpha_GABAA = 1
+Beta_AMPA = 0.35
+Beta_GABAA = 0.05
+synsetdel("AMPA",0)
+synsetdel("GABAA",50)
+
+//* STIM
+PAMP = 2  // for PULSES that are turned on
+for ltr(XO,new List("PULSE")) XO.dur=1.5
+trig.noise = 0
+trig.number = 100
+trig.interval = 250
+trig.start = 340
+
+for ltr(XO,new List("sinstim")) {
+  XO.baseamp=-0.006
+  XO.amp=0.01
+  XO.freq=4
+}

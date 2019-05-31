@@ -1,0 +1,63 @@
+// $Id: net.hoc,v 1.137 2002/05/14 21:08:03 billl Exp $
+
+//* NETWORK CONSTANTS
+nlam = 2 // number of laminae
+npatt = 11 // number of input/output patterns
+nflip = 6 // number of bits to set
+convn = 1
+kalap = 0.5 // require conv from >3.5 (ie 4) outputs
+conva = 0
+double ndot[convn], xdot[convn], ddot[convn]
+double szinp[convn]
+for ii=0,conva-1 { szinp[ii] = 80 } // the size of the input (N)
+for ii=conva,convn-1 { szinp[ii] = 80 } // the size of the input (N)
+szout = 80  // the size of the output (M)
+BVBASE = 0.0 // use BVBASE/1 binary vectors
+
+//* DECLARATIONS
+seed = 243545
+vseed(seed)
+objref mat[2],inhv[convn],ivl[convn],ovl,test[convn]
+ovl = new List()  // input  vector list
+for ii=0,convn-1 {
+  inhv[ii] = new Vector(szout)
+  ivl[ii] = new List()  // output vector list
+  test[ii] = new Vector(szout)
+}
+
+//* CREATE MATs
+{mat[0] = new Vector(szinp[0]*szout) mat[1] = new Vector(szinp[0]*szout)}
+// {ii=0 mkorthog(ovl,szout,nflip) mkorthog(ivl[ii],szinp[ii],nflip)}
+rdvecs("ivl.vecs",6,11,ivl,80)
+rdvecs("ovl.vecs",6,11,ovl,80)
+print "Vector pairs"
+for ltr2(XO,YO,ivl,ovl) { XO.vpr printf("\t<<==>>\t") YO.vpr }
+{ii=0 makemat(mat[0],ivl[ii],ovl) makemat(mat[1],ovl,ivl[ii]) }
+
+//* CREATE CELLS
+objref lam[nlam]
+{ii=0 lam[ii] = new LAM(ii,szout,szinp)}  // the forward cells
+{ii=1 lam[ii] = new LAM(ii,szinp,szout)}  // the backward cells
+
+access lam[0].nrn[0].soma
+objref trig
+trig = new NetStim(0.5)
+for ltr(XO,new List("PULSE")) netgen(trig,XO)
+
+//* COPY the connectivity
+//** conn forward
+lam[0].ampalist(tmplist)
+lam[1].clist(tmplist2)
+connmap(mat[1],tmplist2,tmplist) // projections from the other set of cells
+lam[0].gabalist(tmplist)
+connmap(mat[1],tmplist2,tmplist) // projections from the other set of cells
+// {vec.resize(80) vec.mrow(mat,0,80) ind.indvwhere(vec,">",0) vlk(ind) } // look at conv
+// scong(NRN[0])
+//** conn backward
+lam[1].ampalist(tmplist)
+lam[0].clist(tmplist2)
+connmap(mat[0],tmplist2,tmplist)
+lam[1].gabalist(tmplist)
+connmap(mat[0],tmplist2,tmplist)
+// {vec.resize(80) vec.mrow(mat[1],0,80) ind.indvwhere(vec,">",0) vlk(ind) } // look at conv
+// scong(NRN[80])

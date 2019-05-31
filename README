@@ -1,0 +1,25 @@
+Lytton WW; Lipton P. Can the hippocampus tell time?: The
+temporo-septal engram shift model.
+Neuroreport, 10:2301--2306, 1999.
+
+This example produces Fig. 1 p 2302 as shown in fig1.gif.  The
+simulation takes several minutes and the progress is indicated in the
+console window by printing the time approximately every 300 ms.  At 5000
+ms, the figure will be displayed in two graph windows.  The raster plot
+will probably be hidden underneath the plot of Net[20].soma.v(0.5)
+NB: the first cycle of stimulation produces an initialization artifact
+(bursting in all cells) that is not shown in the original figure. 
+
+For questions about the model contact Bill Lytton at
+billl@neurosim.downstate.edu
+
+Michael Hines made some non-substantive changes to vecst.mod (derived
+from vecst.mod.orig) to allow running the model under mswin and on the
+mac.  The most significant being the incorporation of a free version of
+srand/drand from
+http://www.mit.edu/afs/athena/activity/c/cgs/src/math/drand48/
+ Under mswin, this model can only be run using NEURON version 5.2
+2002/02/28 or later since it makes use of calls to sprintf and
+hoc_obj_file_arg which were not exported by earlier versions.  On a MAC
+you may need to increase the memory size for NEURON to 24MB. 
+

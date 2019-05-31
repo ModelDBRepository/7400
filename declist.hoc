@@ -1,0 +1,183 @@
+// $Id: declist.hoc,v 1.17 1999/09/16 22:15:10 billl Exp $
+
+proc declist() {}
+
+//* Declarations
+
+begintemplate String2
+public s,t
+strdef s,t
+proc init() {
+  if (numarg() == 1) { s=$s1 }
+  if (numarg() == 2) { s=$s1 t=$s2 }
+}
+endtemplate String2
+
+strdef mechnames
+objref tmplist,tmplist2
+tmplist = new List()
+
+//* list iterator ltr
+// usage 'for ltr(XO, tmplist) { print XO }'
+iterator ltr() { local i
+  if (numarg()==3) {$&3=0} else {i1 = 0}
+  for i = 0, $o2.count() - 1 {
+    $o1 = $o2.object(i)
+    iterator_statement
+    if (numarg()==3) { $&3+=1 } else { i1+=1 }
+  }
+  $o1 = nil
+}
+
+//* list iterator ltr2
+// usage 'for ltr2(XO, YO, list1, list2) { print XO,YO }'
+iterator ltr2() { local i
+  if (numarg()==5) {$&5=0} else {i1 = 0}
+  if ($o3.count != $o4.count) { print "ltr2 ERROR: lists have different lengths" return }
+  for i = 0, $o3.count() - 1 {
+    $o1 = $o3.object(i)
+    $o2 = $o4.object(i)
+    iterator_statement
+    if (numarg()==5) { $&5+=1 } else { i1+=1 }
+  }
+  $o1=nil $o2=nil
+}
+
+//* list pairwise iterator ltrp
+// usage 'for ltrp(XO, YO, list) { print XO,YO }' takes them pairwise
+iterator ltrp() { local i
+  if (numarg()==4) {$&4=0} else {i1 = 0}
+  for (i=0;i<$o3.count()-1;i+=2) {
+    $o1 = $o3.object(i) $o2 = $o3.object(i+1)
+    iterator_statement
+    if (numarg()==4) { $&4+=1 } else { i1+=1 }
+  }
+  $o1=nil $o2=nil
+}
+
+//* list iterator sltr
+// usage 'for sltr(XO, string) { print XO }'
+iterator sltr() { local i
+  tmplist = new List($s2)
+  if (numarg()==3) {$&3=0} else {i1=0}
+  for i = 0, tmplist.count() - 1 {
+    $o1 = tmplist.object(i)
+    iterator_statement
+    if (numarg()==3) { $&3+=1 } else { i1+=1 }
+  }
+  $o1 = nil
+}
+
+//* listedit() allows you to remove things by clicking
+proc listedit () {
+  if (numarg()==0) { print "listedit(list,str) gives browser(list,str) for removing items" return}
+  if (numarg()==1) {
+  if (! isstring($o1.object(0),temp_string_)) {print "Give name for string of object?" return }
+    sprint(temp_string_,"proc ledt1 () {sprint(temp_string_,%s,hoc_ac_,%s.object(hoc_ac_).%s)}","\"%d:%s\"",$o1,"s")
+  } else {
+    sprint(temp_string_,"proc ledt1 () {sprint(temp_string_,%s,hoc_ac_,%s.object(hoc_ac_).%s)}","\"%d:%s\"",$o1,$s2)
+  }
+  execute1(temp_string_)
+  $o1.browser("Double click on item to remove",temp_string_,"ledt1()")
+  sprint(temp_string_,"%s.remove(hoc_ac_)",$o1)
+  $o1.accept_action(temp_string_)
+}
+
+
+//* listXO() connects stuff to XO from a list
+proc listXO () {
+  if (numarg()==1) {
+    $o1.browser("Double click")
+    sprint(temp_string_,"print hoc_ac_,\":XO -> \",%s.object(hoc_ac_) XO = %s.object(hoc_ac_)",$o1,$o1)
+    $o1.accept_action(temp_string_)
+  } else if (numarg()==2) {
+    $o1.browser($s2)
+    sprint(temp_string_,"XO = %s.object(hoc_ac_) print %s.object(hoc_ac_).%s",$o1,$o1,$s2)
+    $o1.accept_action(temp_string_)
+  } else if (numarg()==3) {
+    $o1.browser($s2)
+    sprint(temp_string_,"XO = %s.object(hoc_ac_) print %s.object(hoc_ac_).%s,%s.object(hoc_ac_).%s",$o1,$o1,$s2,$o1,$s3)
+    $o1.accept_action(temp_string_)
+  }
+}
+
+//* lcatstr(list,s1,s2,...) make new List("s1") new List("s2") ... in one list
+proc lcatstr() { local i
+  if (numarg()<3) { print "lcatstr(l1,s1,s2,...) puts new Lists into l1" return }
+  $o1 = new List($s2)
+  for i=3,numarg() {
+    tmplist2 = new List($si)
+    for ltr(XO,tmplist2) { $o1.append(XO) }  
+  }
+}
+
+//* sublist() places a sublist in LIST0 from LIST1 index BEGIN to END inclusive
+proc sublist () { local ii
+  $o1.remove_all
+  for ii=$3,$4 {
+    $o1.append($o2.object(ii))
+  }
+}
+
+//* catlist() concats LIST2...LISTN on end of LIST1
+proc catlist () { local i
+  for i = 2, numarg() {
+    for ltr(YO,$oi) {
+      $o1.append(YO)
+    }
+  }
+}  
+
+//* mechlist() creates a LIST of all this CELL type's TEMPLATE type
+// list, cell, template
+// make a list of mechanisms belonging to a certain template
+proc mechlist () { local num,ii
+//  mechnames = ""  // not a good storage since runs out of room
+  if (numarg()==0) { print "mechlist(list, cell, template)" return}
+  $o1 = new List($s2)
+  num = $o1.count
+  for ii=0,num-1 {
+    sprint(temp_string_,"%s.append(%s.%s)",$o1,$o1.object(ii),$s3)
+    execute(temp_string_)
+    sprint(mechnames,"%s/%d/%s.%s",mechnames,ii,$o1.object(ii),$s3)
+  }
+  for (ii=num-1;ii>=0;ii=ii-1) { $o1.remove(ii) }
+}
+
+//* lp() loop through a list running command in object's context
+// assumes list in tmplist
+// with 1 args run $o1.object().obj_elem
+// with 2 args run comm($o1.object().obj_elem)
+proc lp () {
+  for ii=0,tmplist.count-1 {
+    printf("%s ",tmplist.object(ii))
+    if (numarg()==2) {
+      sprint(temp_string_,"%s(%s.%s)",$s2,tmplist.object(ii),$s1)
+    } else {
+      sprint(temp_string_,"%s.%s",tmplist.object(ii),$s1)
+    }
+    execute(temp_string_)
+  }
+}
+
+//* prlp() loop through a list printing object name and result of command
+proc prlp () {
+  for ii=0,tmplist.count-1 {
+    printf("%s ",tmplist.object(ii))
+    if (numarg()==1) {
+      sprint(temp_string_,"print %s.%s",tmplist.object(ii),$s1)
+      execute(temp_string_)
+    } else { print "" }
+  }
+}
+
+//** repl_str(str,stra,strb,scratch): replace stra with strb in string
+// will only replace first string match
+proc repl_str() {
+  if (sfunc.substr($s1,$s2) == -1) { print $s2," not in ",$s1  return }
+  sfunc.tail($s1,$s2,$s4)
+  sprint($s4,"%s%s",$s3,$s4)
+  sfunc.head($s1,$s2,$s1)
+  sprint($s1,"%s%s",$s1,$s4)
+}
+

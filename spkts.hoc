@@ -1,0 +1,299 @@
+// $Id: spkts.hoc,v 1.41 2002/05/14 15:45:08 billl Exp $
+
+// ancillary programs for handling vectors
+
+load_file("decvec.hoc","decvec")
+// load_proc("decvec")
+
+//* transfer a file into a list of strings
+// usage 'f2slist(list,file)'
+proc f2slist() { local i
+  $o1.remove_all
+  if (! tmpfile.ropen($s2)) { print "Can't open ",$s2
+    return }
+  while (tmpfile.gets(temp_string_)>0) {
+    sfunc.head(temp_string_,"\n",temp_string_) // chop
+    tmpobj = new String(temp_string_)
+    $o1.append(tmpobj)
+  }
+}
+
+//* spkts(attrnum[,flag,min,max]) graph spikes from the vectors
+
+thresh = 0    // threshold for deciding which are spikes
+burstlen = 1.4  // duration of spike or burst, don't accept another till after this time
+
+proc spkts_call() {}// callback function stub
+proc spkts () { local cnt, attrnum, ii, pstep, jj, num, time0, flag, min, max, tst
+  vec.resize(0) 
+  vec1.resize(0) // will store times and indices respectively
+  if (numarg()==0) { print "spkts(attrnum[,flag,min,max])\n\tflag 0: graph, flag 1: save vec1,vec to veclist, flag 2: save inds (vec1) and times (vec)" // infomercial
+    return }
+  attrnum = $1
+  panobj = panobjl.object(attrnum)
+  if (attrnum==0) { cnt=printlist.count() } else { cnt = panobj.llist.count() }
+  pstep = panobj.printStep
+  if (numarg()>1) { flag = $2 } else { flag = 0 }
+  if (numarg()>2) { min = $3 } else { min = 0 }
+  if (numarg()>3) { max = $4 } else { max = cnt-1 }
+  if (flag==0){
+    newPlot(0,1,0,1)
+    panobj.glist.append(graphItem)
+  }
+  for ii=min,max {
+    if (attrnum==0) { 
+      vrtmp.copy(printlist.object(ii).vec) 
+      if (panobj.printStep==-2) tvec = printlist.object(ii).tvec
+      if (panobj.printStep==-1) tvec = panobj.tvec
+    } else {
+      rv_readvec(attrnum,ii,vrtmp)  // pick up vector from file
+      if (panobj.printStep==-2) tvec = panobj.tvec
+    }
+    spkts_call()  // place to reset thresh or do other manipulations
+    // should replace indvwhere,truncvec with vecst.mod:vec.xing()
+    ind.indvwhere(vrtmp,">",thresh) // this has redund points from spk or burst
+    if (panobj.printStep<0) { // a tvec
+      ind.index(tvec,ind)  // convert indices to times
+    } else {
+      ind.mul(pstep)  // convert indices to times
+    }
+    truncvec(ind,vec0,burstlen) // get rid of times too close to previous one
+    if (flag==0) { printf("%d:%d ",ii,ind.size()) }  // how many times this cell spiked
+    vec0.resize(ind.size)  // scratch vector stores index
+    vec0.fill(ii)
+    vec1.copy(vec0,vec1.size())  // add same index for each spk to end of vec1
+    vec.copy(ind,vec.size())     // add the times for this to end of vec
+  }
+  
+  if (panobj.printStep<0) { // a tvec
+    tst = vec.max
+  } else {
+    tst = pstep*vrtmp.size()         // calc the tst
+  }
+
+  if (flag==1) { savevec(vec1) savevec(vec) }
+  if (flag<=0) {
+    vec1.mark(graphItem,vec,"O",panobj.line)  // graph all the times
+    printf("\n")
+    graphItem.size(0,tst,min,max)
+    graphItem.xaxis(0)
+    graphItem.label(0.1,0.9,panobj.filename)
+  }
+}
+
+//** pull the vec and vec1 files from spkts apart and put in alloc'ed vectors
+func parse_spkts () { local p,q
+  p=allocvecs(vec1.max+2) q=p+1
+  for (ii=0;ii<=vec1.max;ii+=1) {
+    mso[p].indvwhere(vec1,"==",ii)
+    mso[q].index(vec,mso[p]) 
+    q += 1
+  }
+  return p+1
+}
+
+proc line_spkts () { local ii,min,max,xmax,skip
+  skip = $1
+  if (numarg()==3) { min=$2 max=$3 } else {
+    min = int(graphItem.size(3)+1) max = int(graphItem.size(4)) }
+  xmax = graphItem.size(2)
+  for (ii=min;ii<max;ii=ii+skip) {
+    graphItem.beginline()
+    graphItem.line(0,ii)
+    graphItem.line(xmax,ii)
+  }
+  graphItem.xaxis()
+}
+
+burst_time=0
+burst_maxfreq = 30
+calc_ave = 0
+
+//** calcspkts(flag,index)
+// run after spkts() so vec contains the times, vec1 contains the
+// indices
+proc calcspkts () { local ii,jj,flag,index,p1,p2,mn,mx
+  p1 = allocvecs(2,1000) p2 = p1+1
+  if (numarg()==0) {
+    print "To be run after spkts(). \
+Assumes times in vec, indices in vec1. \
+calcspkts(flag,min,max)\nflags:\t1\tspk times\n\t2\tspk freq \
+\t3\tburst times\n\t4\tburst freq\nset calc_ave to get averages for freqs"
+    return
+  }
+  // vec contains the times, vec1 contains the indices
+  flag = $1
+  mn = $2
+  if (numarg()==3) { mx=$3 } else { mx=mn }
+  for index=mn,mx {
+    mso[p2].resize(0)
+    mso[p1].indvwhere(vec1,"==",index)
+    mso[p1].index(vec,mso[p1])
+    if (flag==1) {  
+      printf("SPKS for #%d: ",index)
+      for jj=0,mso[p1].size()-1 {printf("%g ",mso[p1].x[jj])}
+      printf("\n")
+    } else if (flag==2) {  
+      printf("FREQ for #%d: ",index)
+      for jj=0,mso[p1].size()-2 { 
+        pushvec(mso[p2],1000./(mso[p1].x[jj+1]-mso[p1].x[jj])) }
+      if (calc_ave) { print mso[p2].mean } else { vlk(mso[p2]) }
+    } else if (flag==3) {  
+      printf("BTIMES for #%d: ",index)
+      burst_time = mso[p1].x[0]
+      for jj=1,mso[p1].size()-1 {
+        if (1000./(mso[p1].x[jj]-burst_time) < burst_maxfreq) {
+          printf("%g ",burst_time)
+          burst_time = mso[p1].x[jj]
+        } 
+      }
+      printf("\n")
+    } else if (flag==4) {  
+      printf("BFREQ for #%d: ",index)
+      burst_time = mso[p1].x[0]
+      for jj=1,mso[p1].size()-1 {
+        // should keep track of spike times in case of very long bursts
+        if (1000./(mso[p1].x[jj]-burst_time) < burst_maxfreq) {
+          pushvec(mso[p2],1000./(mso[p1].x[jj]-burst_time))
+          burst_time = mso[p1].x[jj]
+        } 
+      }
+      if (calc_ave) { print mso[p2].mean } else { mso[p2].printf }
+    }
+  }
+  dealloc(p1)
+}
+
+func rvwheres () { local ii
+  if ($1!=0) {
+    for ii=0,panobjl.object($1).llist.count()-1 {
+      if (sfunc.substr(panobjl.object($1).llist.object(ii).name,$s2)==0) {
+        return ii }
+    }
+    errorMsg("String not found in rvwheres.")
+  }
+  return -2
+}
+
+supind = 0
+//* spkhist assume spk times in vec 
+// allows superimposing of graphs
+// spkhist(bin_size)
+proc spkhist () { local ii,jj,min,max,diff
+  if (numarg()==0) { print "spkhist(bin_size)" return }
+  if (numarg()==3) { min=$2 max=$3 } else { min=0 max=tstop }
+  diff = max-min
+  vrtmp.hist(vec,min,max,$1)
+  vec0.resize(4*diff/$1)
+  vec1.resize(4*diff/$1)
+  vec0.fill(0) vec1.fill(0)
+  for (ii=min;ii<int(diff/$1);ii=ii+1) {
+    jj=ii*4
+    vec0.x[jj+0] = ii*$1
+    vec0.x[jj+1] = ii*$1
+    vec0.x[jj+2] = (ii+1)*$1
+    vec0.x[jj+3] = (ii+1)*$1
+    vec1.x[jj+0] = 0
+    vec1.x[jj+1] = vrtmp.x[ii]
+    vec1.x[jj+2] = vrtmp.x[ii]
+    vec1.x[jj+3] = 0
+  }
+  if (panobj.super==0) {
+    newPlot(min,max,0,vrtmp.max)
+    panobj.glist.append(graphItem)  
+  } else { graphItem = panobjl.object(panobj.remote).glist.object(supind) 
+    supind = supind+1 }
+  vec1.line(graphItem,vec0)
+  sprint(temp_string_,"Hist: %s %d",panobj.filename,$1)
+  graphItem.label(0.1,0.9,temp_string_)
+}
+
+//** truncvec (vec1,vec2,margin) 
+// truncate a thresholded time vector so that only one time is given for each spike
+// vec1 has thresholded times, vec2 is for scratch use, margin is duration of a spike
+proc truncvec () { local ii, num, marg, time0
+  marg = $3
+  num=0 time0=-10
+  $o2.resize($o1.size())
+  $o2.fill(-2)
+  for ii=0,$o1.size()-1 {
+    if ($o1.x[ii] > time0+marg) { 
+      $o2.x[ii] = $o1.x[ii]
+      time0 = $o1.x[ii]
+    }
+  }
+  $o1.where($o2,">",-1)
+}
+
+//** redundout(vec) eliminates sequential redundent entries
+// destructive
+proc redundout () { local x,ii,p1
+  p1=allocvecs(1)
+  $o1.sort
+  x = $o1.x[0]
+  for ii=1,$o1.size-1 {
+    if ($o1.x[ii]==x) { $o1.x[ii]=-1e20 } else { x=$o1.x[ii] }
+  }
+  mso[p1].where($o1,">",-1e20)
+  $o1.copy(mso[p1])
+  dealloc(p1)
+}
+
+//** redundkeep(vec) keeps sequential redundent entries
+// destructive
+proc redundkeep () { local x,ii
+  $o1.sort
+  x = $o1.x[0]
+  for ii=1,$o1.size-1 {
+    if ($o1.x[ii]!=x) { $o1.x[ii-1]=-1e20 x=$o1.x[ii] }
+  }
+  $o1.where($o1,">",-1e20)
+}
+
+//** after running spkall can see which cells are responsible for spks
+// assumes spk times in vec, spk identities in vec1
+// uses ind and vec0
+proc whichspked () { local ii
+  ind.indvwhere(vec,"()",$1,$2) // a range
+  vec0 = vec1.ind(ind)
+  ind = vec.ind(ind)
+  for ii=0,ind.size()-1 { printf("%d %g\n",vec0.x[ii],ind.x[ii]) }
+}
+
+// firebtwn(ind,time,min,max) list of cells that fire between times min and max
+proc firebtwn () { local ii,p1,p2,p3
+  p1 = allocvecs(3) p2=p1+1 p3=p2+1
+  mso[p3].indvwhere($o2,"[]",$3,$4)
+  mso[p1].index($o1,mso[p3]) // indices
+  mso[p2].index($o2,mso[p3]) // times
+  printf("%d hits\n",mso[p3].size)
+  for vtr2(&x,&y,mso[p1],mso[p2]) {
+      printf("%4d::%6.2f ",x,y)
+      if ((ii+1)%5==0) { print "" }
+  }
+  print ""
+  dealloc(p1)
+//  dealloc(p2) // to save the indexes
+}
+
+// elimind(ind,time,min,max) take out cells with nums between min,max
+// destructive
+proc elimind () { local ii,p1
+  p1 = allocvecs(1)
+  mso[p1].indvwhere($o1,"[]",$3,$4)
+  vecelim($o1,mso[p1]) vecelim($o2,mso[p1])
+  dealloc(p1)
+}
+
+// index/time graph
+// tigr(ind,vec,size,marker)
+proc tigr () { local sz
+  if (numarg()==0) { print "tigr(Yvec,Xvec,marker size,marker type)" 
+    print "Marker types: \"o\",t,s,O,T,S,+ (circ, tri, square; CAP is filled)"
+    return }
+  if (numarg()>2) { sz=$3 } else { sz=6 }
+  if (numarg()>3) { temp_string_=$s4 } else { temp_string_="O" }
+  nvplt($o2)
+  graphItem.size($o2.min,$o2.max,$o1.min,$o1.max)
+  $o1.mark(graphItem,$o2,temp_string_,sz,panobj.curcol) 
+}

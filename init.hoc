@@ -1,0 +1,46 @@
+// $Id: init.hoc,v 1.5 2002/04/18 19:38:26 billl Exp $
+// FROM 98oct18.15 [40.133.106.246]
+// mod/$CPU/special init.hoc -
+
+strdef simname, output_file, datestr, uname, comment, osname
+simname = "sim"
+runnum = 15
+datestr = "98oct18"
+output_file = "98oct18.15"
+uname = "i686"
+osname = "Linux"
+
+xwindows=1
+// ancillary stuff to be done on start-up
+
+xopen("nrnoc.hoc")
+xopen("simctrl.hoc")
+
+graph_flag = 1
+xopen("grvec.hoc")
+xopen("syncode.hoc")
+xopen("boxes.hoc")
+xopen("spkts.hoc")
+
+xopen("labels.hoc")
+xopen("tmpl.hoc")
+xopen("proc.hoc")
+xopen("net.hoc")
+xopen("params.hoc")
+xopen("run.hoc")
+
+// run
+run()
+
+// draw spike raster plot
+panobj.line=3
+spkts(0)
+revec(stimvec,42,150,20,19,15,129,92,88,59,113,149,6,72,46,114,93,142,141,9)
+stimvec.reverse
+for (t=trig.start;t<tstop;t+=trig.interval) { 
+  graphItem.mark(t,popvec(stimvec),"o",5,2,3)
+}
+
+// draw voltage graph
+panobj.line=1
+gv(20)

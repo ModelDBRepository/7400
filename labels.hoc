@@ -1,0 +1,28 @@
+// $Id: labels.hoc,v 1.4 1998/10/16 17:16:29 billl Exp $
+
+tmplist2 = new List()
+
+//* numbers of things
+func fnlam() { return nlam }
+
+//* cell types: 
+func ctypes(){return 2 }  // number of cell types
+func fpyr () {return  0 }
+func fin1 () {return  1 }
+
+//* syn types: fgabaa = 0 fgabab = 1 fampa = 2 fnmda = 3}
+func fgabaa (){return  0 }
+func fgabab (){return  1 }
+func fampa () {return  2 }
+func fnmda () {return  3 }
+func finj () {return  4 }
+
+//* field types:  nrn=1, syn=3, clm=3, idx=4
+func nrn() { return 1 }  // neuron type (either RE or TC)
+func syn() { return 2 }  // synapse type (GABAA, GABAB, AMPA, NMDA)
+func clm() { return 3 }  // column number
+func idx() { return 4 }  // nrn number in the column 
+
+// utility functions
+// plmin(val,var)
+func plmin() { return $1 + $2*(2*u_rand() - 1) } 

@@ -1,0 +1,369 @@
+// $Id: nrnoc.hoc,v 1.29 2002/05/01 20:18:35 billl Exp $
+
+proc nrnoc () {}
+
+// Users should not edit nrnoc.hoc or default.hoc.  Any local 
+// changes to these files should be made in local.hoc.
+
+// key '*&*' is picked up by to indicate command for emacs
+proc elisp () { printf("*&* %s\n",$s1) }
+// if (not exists(simname)) { strdef simname, output_file, datestr, comment }
+
+// Simctrl.hoc will automatically load stdgraph.hoc which automatically
+// loads stdrun.hoc
+strdef temp_string_, user_string_  // needed for simctrl
+/* Global variable default values.  NOTE that stdrun.hoc, stdgraph.hoc
+and simctrl.hoc all contain variable definitions and thus default.hoc
+should be loaded after these files */
+load_file("default.hoc")      /* Load default.hoc */
+
+/* Allows arrays of strings */
+objref hoc_obj_[2]
+if (xwindows) {
+  load_file("stdgui.hoc") // don't want to encounter other String tempate defs
+  load_file("simctrl.hoc")
+} else {
+  load_file("stdlib.hoc")
+  load_file("stdrunnoiv.hoc")
+}
+
+proc run () {
+
+  stdinit()
+
+  if (batch_flag == 1) {
+    sprint(output_file,"data/b%s.%02d", datestr, runnum)
+    batch_run(tstop, printStep, output_file)
+    finish()
+  } else {
+    continueRun(tstop)
+  }
+}
+
+proc continueRun() { local eventCount
+  // Although this works properly "the first time" it may not properly "continue" a simulation 
+
+  eventCount=0
+  eventslow=1
+  stoprun = 0
+
+  while (t < $1 && stoprun == 0) { 
+    for i = 1, nstep_steprun { fadvance() }
+    outputData()
+    
+    eventCount = eventCount + 1
+    if (xwindows && eventCount%eventStep < 0.1) { doEvents() }
+  }
+
+  finish()
+}
+
+proc stdinit() {
+  realtime=0 startsw()
+  t = 0
+  stoprun = 0
+
+  if (batch_flag == 1) {
+    batch_save()
+    batchSave()  // User defined program to set up stuff to save
+  }
+
+  init()
+  init()
+
+  if (graph_flag == 1) { 
+    if (iv_flag == 1) {
+      initPlot()
+    } else {
+      initGraph() 
+    }
+  }
+
+  if (print_flag == 1) { initPrint() }
+}
+
+
+proc init () {
+  initMech()
+
+  initMisc1()
+
+  /* Initialize state vars then calculate currents */
+/* If user hand-set v in initMisc1() then v_init should be > 1000,
+else all compartments will be set to v_init */
+if (v_init < 1000) {
+  finitialize(v_init)
+} else {
+  finitialize()
+}
+fcurrent()
+
+/* Set ca pump and leak channel for steady state */
+setMemb()
+
+/* Recalculate currents with new pump and leak kinetics */
+fcurrent()
+fcurrent()
+
+initMisc2()
+if (cvode_active()) cvode.re_init()
+}
+
+proc initMech() { /* Initialization of mechanism variables */
+/* NOTE: if any changes are made to the NEURON block of any local mod
+file, the user must add the necessary inits to initMisc1() */
+
+/** Range variables **/
+
+forall {
+
+  if (ismembrane("na_ion")) { 
+    nai = na_init
+    nai0_na_ion = na_init
+  }
+  
+  if (ismembrane("k_ion")) {
+    ki = k_init
+    ki0_k_ion = k_init
+  }
+  
+  if (ismembrane("ca_ion")) { 
+    cai = ca_init
+    cai0_ca_ion = ca_init
+  }
+}
+
+/** Global variables **/
+}
+
+proc setMemb () { local i_forward, i_back, iSum
+  // Setup steady state voltage using leak channel
+  forall {
+    if (ismembrane("pas")) {
+      iSum = 0.0
+      
+      if (ismembrane("na_ion")) { iSum = iSum + ina }
+      if (ismembrane("k_ion"))  { iSum = iSum + ik  }
+      if (ismembrane("ca_ion")) { iSum = iSum + ica }
+      if (ismembrane("ns_ion")) { iSum = iSum + ins } // Non-specific
+
+      if (iSum == 0) {        // Pas cmp so set e_pas = v
+        e_pas = v
+
+      } else {
+        if (g_pas > 0) {    // Assume g set by user, calc e
+          e_pas = v + iSum/g_pas
+
+        } else {            // Assume e set by user, calc g
+          if (e_pas != v) {
+            g_pas = iSum/(e_pas - v)
+
+          } else {        // error: g_pas <= 0
+            errorMsg("bad g", g_pas)
+          }
+        }
+
+        if (e_pas < -100 || e_pas > 0) {
+          printf(".")
+          // printf("%s erev: %g %g %g\n",secname(),e_pas,ina,ik)
+        }
+      }
+
+    } else if (ismembrane("Passive")) {
+      iSum = 0.0
+      
+      if (ismembrane("na_ion")) { iSum = iSum + ina }
+      if (ismembrane("k_ion"))  { iSum = iSum + ik  }
+      if (ismembrane("ca_ion")) { iSum = iSum + ica }
+      if (ismembrane("ns_ion")) { iSum = iSum + ins } // Non-specific
+
+      if (iSum == 0) {        // Passive cmp so set erev_Passive = v
+        erev_Passive = v
+
+      } else {
+        if (g_Passive > 0) {    // Assume g set by user, calc erev
+          erev_Passive = v + iSum/g_Passive
+
+        } else {            // Assume erev set by user, calc g
+          if (erev_Passive != v) {
+            g_Passive = iSum/(erev_Passive - v)
+
+          } else {        // error: g_Passive <= 0
+            errorMsg("bad g", g_Passive)
+          }
+        }
+
+        if (erev_Passive < -100 || erev_Passive > 0) {
+          printf(".")
+          // errorMsg("erev out of bounds", erev_Passive)
+        }
+      }
+    }
+  }
+  print ""
+}
+
+proc finish() {
+  /* Called following completion of continueRun() */
+
+finishMisc()
+
+if (graph_flag == 1) {
+  if (iv_flag == 1) {
+    flushPlot()
+  } else {
+    graphmode(-1)
+    plt(-1)
+  }
+}
+
+if (print_flag == 1) {
+  wopen("")
+}
+}
+
+/*------------------------------------------------------------
+User definable GRAPHICS and PRINTING routines
+------------------------------------------------------------*/
+
+proc outputData() {
+  // Default procedure - if outputData() doesn't exist in the run file
+
+  if (graph_flag == 1) {
+    if (iv_flag == 1) {
+      Plot()
+      rt = stopsw()
+      if (rt > realtime) {
+        realtime = rt
+        fastflushPlot()
+        doNotify()
+        if (realtime == 2 && eventcount > 50) {
+          eventslow = int(eventcount/50) + 1
+        }
+        eventcount = 0
+      }else{
+        eventcount = eventcount + 1
+        if ((eventcount%eventslow) == 0) {
+          doEvents()
+        }
+      }
+
+    } else {
+      graph(t)
+    }
+  }
+
+  if (print_flag == 1) { 
+    if (t%printStep <= printStep) { printOut() }
+  }
+}
+
+proc printOut() {
+  /* Default procedure - if printOut() doesn't exist in the run file */
+}
+
+proc initGraph() {
+  /* Default procedure - if initGraph() doesn't exist in the run file */
+
+graph()
+}
+
+proc initPrint() {
+  /* Default procedure - if initPrint() doesn't exist in the run file */
+
+wopen(output_file)
+}
+
+/*------------------------------------------------------------
+User definable BATCH RUN routines
+------------------------------------------------------------*/
+
+proc batchSave() {
+  /* Default procedure - if batchSave() doesn't exist in the run file */
+}
+
+proc nextrun() {
+  // Called from finishmisc() following completion of batch in an autorun
+  wopen("")   
+  runnum = runnum + 1
+  sprint(output_file,"data/b%s.%02d", datestr, runnum)
+}                       
+
+// commands for emacs
+proc update_runnum() { 
+  runnum = $1
+  sprint(output_file,"data/%s.%02d", datestr, runnum)
+  print "^&^ (progn (sim-index-revert)(setq sim-runnum ",runnum,"))" }
+proc nrn_write_index() { printf("&INDEX& %s\n",$s1) }
+proc nrn_update () { elisp("nrn-update") }
+proc nrn_message () { printf("!&! %s\n",$s1) } 
+
+/*------------------------------------------------------------
+User definable INITIALIZATION and FINISH routines
+------------------------------------------------------------*/
+
+// Default procedure - if initMisc1() doesn't exist in the run file 
+// Initializations performed prior to finitialize() 
+// This should contain point process inits and inits for any changes 
+//        made to the NEURON block of any local mod file 
+proc initMisc1() { }
+
+// Default procedure - if initMisc2() doesn't exist in the run file 
+// Initializations performed after finitialize() 
+proc initMisc2() { }
+
+// Default procedure - if finishMisc() doesn't exist in the run file 
+proc finishMisc() { }
+
+/*------------------------------------------------------------
+Miscellaneous routines
+------------------------------------------------------------*/
+
+proc errorMsg() {
+  /* Print warning, assumes arg1 is string and arg2 if present is a
+  variable value */
+
+sectionname(section)
+
+if (numarg() == 0) {
+  printf("ERROR in errorMsg(): Needs at least 1 argument.\n")
+} else if (numarg() == 1) {
+  printf("ERROR: %s in section %s.\n", $s1, section)
+} else {
+  printf("ERROR: %s in section %s (var=%g).\n", $s1, section, $2)
+}
+}
+
+proc clear() {
+  /* Clear non-interviews plot window */
+plt(-3)
+}
+
+func mod() { local x, y
+  /* Mod function for non-integers */
+
+x=$1
+y=$2
+
+return (x/y - int(x/y))
+}
+
+proc whatSection() {
+  /* Print name of section */
+sectionname(section)
+print section
+}
+
+proc print_pp_location() { local x //arg1 must be a point process
+   x = $o1.get_loc()
+   sectionname(temp_string_)
+   printf("%s located at %s(%g)\n", $o1, temp_string_, x)
+   pop_section()
+}
+
+//* Load local modifications to nrnoc.hoc and default.hoc
+load_file("local.hoc")
+
+if (xwindows && graph_flag) { nrnmainmenu() } // pwman_place(50,50)
+
+print "Init complete.\n"

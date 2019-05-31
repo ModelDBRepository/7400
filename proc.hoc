@@ -1,0 +1,171 @@
+// $Id: proc.hoc,v 1.43 2002/05/14 21:29:20 billl Exp $
+
+//* crosstalk() calculates ndot and xdot
+// ndot norm of vector against itself X.X
+// xdot average cross product <X.Y>
+// ddot = ndot-xdot
+double szinp[1],ndot[1],xdot[1],ddot[1]
+proc crosstalk () { local num,i,j,s1,s2,s3,ni,nf,szin,iflip
+  num = $1
+  szin=szinp[num] iflip=szin/2
+  if (szin<100) {
+    tot = fac(szin)/fac(iflip)^2 // the total number of vectors
+  } else {
+    tot = exp(logfac(szin) - 2*logfac(iflip))
+  }
+  s1 = s2 = s3 = 0
+  nf = fac(iflip)
+  for i=1,iflip { // let's not include X.X
+    ni = iflip-i
+    a = nf/fac(ni)/fac(i)
+    a = a*a/tot
+    s1 = s1 + a*(ni*BVBASE*BVBASE+ ni + 2*i*BVBASE)
+  }
+  ndot[num] = iflip*BVBASE*BVBASE + iflip // iflip*1*1 actually
+  xdot[num] = s1
+  ddot[num] = ndot[num]-xdot[num]
+}
+
+//* makemat(mat,inlist,outlist) recreates the outerproduct matrix from iovec's
+proc makemat() { local p1,full,szinp
+  if ($o2.count!=npatt || $o3.count!=npatt) { 
+    printf("ERROR in makemat: list counts differ from npatt %s %s\n",$o2,$o3) return }
+  szinp = $o2.object(0).size
+  p1 = allocvecs(1)
+  mso[p1].resize(szinp*szout)  // scratch matrix
+  $o1.resize(szinp*szout)
+  $o1.fill(0)
+  // generate outer product matrix
+  for ltr2(XO,YO,$o2,$o3) {
+    mso[p1].outprod(YO,XO)
+    $o1.add(mso[p1])
+  }
+  $o1.div(npatt)
+  dealloc(p1)
+}
+
+//* makeinh() makes the inhibitory projection out of the output vectors
+proc makeinh() { local ii
+  ii = $3
+  if ($o2.count!=npatt) { print "ERROR: wrong list count"  return }
+  $o1.resize(szout)
+  $o1.fill(0.)
+  for ltr(XO,$o2) { $o1.add(XO) }
+  $o1.mul(-xdot[ii]/npatt)
+}
+
+//* mkiovec(list,size)  put npatt vecs of size SIZE in LIST
+proc mkiovec() { local i,flag,sz,flp
+  sz=$2 flp=sz/2
+  flag=0 // can't just use '||' because all get eval'ed and generate error
+  if ($o1.count!=npatt) { flag=1
+  } else if ($o1.object(0).size!=sz) {flag=1}
+  if (flag) {
+    $o1.remove_all
+    for i=0,npatt-1 { 
+      tmpvec = new Vector(sz,-1) // input vec
+      tmpvec.randwd(flp)
+      $o1.append(tmpvec)
+    }
+    tmpvec = nil
+  } else for ltr(XO,$o1) {
+    XO.randwd(flp)
+  }
+}
+
+//* mkiovec2(list,size,flp)  put npatt vecs of size SIZE in LIST
+proc mkiovec2() { local i,flag,sz,flp
+  sz=$2 flp=$3
+  flag=0 // can't just use '||' because all get eval'ed and generate error
+  if ($o1.count!=npatt) { flag=1
+  } else if ($o1.object(0).size!=sz) {flag=1}
+  if (flag) {
+    $o1.remove_all
+    for i=0,npatt-1 { 
+      tmpvec = new Vector(sz,-1) // input vec
+      tmpvec.randwd(flp)
+      $o1.append(tmpvec)
+    }
+    tmpvec = nil
+  } else for ltr(XO,$o1) {
+    XO.randwd(flp)
+  }
+}
+
+//* mkorthog(list,size,flips)  put npatt vecs of size SIZE in LIST
+proc mkorthog() { local i,flag,sz,flp,p1,p2,a,b
+  sz=$2 flp=$3
+  p1 = allocvecs(2,sz) p2=p1+1 mso[p1].resize(sz) 
+  flag=0 // can't just use '||' because all get eval'ed and generate error
+  if ($o1.count!=npatt) { flag=1
+  } else if ($o1.object(0).size!=sz) {flag=1}
+  mso[p1].fill(0)  // key to where the flips have been done
+  mso[p2].resize(sz) mso[p2].indgen() // key to indices which can still be flipped
+  if (npatt > sz/flp) { 
+    printf("ERROR: can't make %d orthog patts (%d only)\n",npatt,sz/flp)
+    return }
+  // if (flag) { $o1.remove_all }
+  for i=0,npatt-1 { 
+    if (flag) { tmpvec = new Vector(sz,0) } else { tmpvec=$o1.object(i) } // input vec
+    for j=0,flp-1 {
+      a = int(rdm.uniform(0,mso[p2].size)) // pick an index into the indices
+      b = mso[p2].x[a] // pick an index to flip
+      tmpvec.x[b] = mso[p1].x[b] = 1 // flip from 0 to 1
+      mso[p2].indvwhere(mso[p1],"==",0) // can still be flipped
+    }
+    if (flag) { $o1.append(tmpvec) }
+  }
+  tmpvec = nil
+  dealloc(p1)
+}
+
+//* rdvecs(FILENAME,NROWS,NCOLS,LIST,VECSZ) 
+proc rdvecs () { local nr,nc
+  nr=$2 nc=$3 sz=$5
+  tmpfile.ropen($s1)
+  $o4.remove_all
+  for ii=1,nc { 
+    tmpfile.seek(0) 
+    tmpvec = new Vector(sz)
+    tmpvec.fill(0)
+    ind.scanf(tmpfile,nr,ii,nc)
+    tmpvec.indset(ind,1)
+    $o4.append(tmpvec)
+    tmpvec=nil
+  }
+}
+
+//* connmap(mat,pre,post) 
+// map a connectivity matrix onto a list of pre's and posts'
+proc connmap () { local isz,osz,num
+  isz = $o2.count  osz = $o3.count
+  if (numarg()==0) { print "connmap(mat,pre,post)" return }
+  if ($o1.size != isz*osz) {
+    printf("ERROR: size mismatch in connmap: %d %d %d\n",$o1.size,isz,osz) return }
+  for ltr(XO,$o3,&x) {   // postsynaptic
+    for ltr(YO,$o2,&y) { //  presynaptic
+      num = $o1.mget(x,y,isz)
+      if (num != 0) {
+        if (num<0) {
+          printf("CONNMAP ERROR: gmax must not be <0.: %d %d %g.\n",x,y,num)
+          return }
+          YO.soma ncl.append(new NetCon(&v(.5), XO, 0, 0.1, num))
+          // print YO,XO,y,x
+      }
+    }
+  }
+}
+
+//* clearsyns() goes through postsyn list and reinitializes everything
+proc clearsyns() { local i,j
+  tmplist = new List("AMPA")
+  for ltr(XO,tmplist) { XO.init_arrays(XO.maxsyn) }
+  tmplist = new List("GABAA")
+  for ltr(XO,tmplist) { XO.init_arrays(XO.maxsyn) }
+  cleansyns()
+}
+
+//* delset ("AMPA") resets the delays for AMPA
+proc delset () { local ii
+  for sltr(XO,$s1) for ii=0,XO.nsyn-1 XO.delay(ii,0)
+}
