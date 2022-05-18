@@ -88,7 +88,9 @@ static double slope(void* vv) {
         }
         return (n*sigxy - sigx*sigy)/(n*sigx2 - sigx*sigx);
 }
-unsigned int __uitrunc(x) double x; { return (unsigned)(int)(x);}
+unsigned int __uitrunc(double x) {
+  return (unsigned)(int)(x);
+}
 ENDVERBATIM
  
 :* v1.vslope(v2) does a linear regression, using v2 as the x-coords
