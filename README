@@ -23,3 +23,7 @@ http://www.mit.edu/afs/athena/activity/c/cgs/src/math/drand48/
 hoc_obj_file_arg which were not exported by earlier versions.  On a MAC
 you may need to increase the memory size for NEURON to 24MB. 
 
+Changelog
+---------
+2022-05: Updated MOD files to contain valid C++ and be compatible with
+         the upcoming versions 8.2 and 9.0 of NEURON.

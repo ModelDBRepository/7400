@@ -42,17 +42,20 @@ VERBATIM
 #include <stdlib.h>
 #include <math.h>
 #include <float.h> /* contains MAXLONG */
+
+#ifndef NRN_VERSION_GTEQ_8_2_0
 extern double* hoc_pgetarg();
 extern double hoc_call_func(Symbol*, int narg);
 extern FILE* hoc_obj_file_arg(int narg);
 extern void vector_resize();
 extern int vector_instance_px();
 extern void* vector_arg();
+#endif
 
 /* some machines do not have drand48 and srand48 so use the implementation
 at the end of this file */
-extern double my_drand48();
-extern void my_srand48();
+double my_drand48();
+void my_srand48(long seedval);
 #undef drand48
 #undef srand48
 #define drand48 my_drand48
@@ -85,7 +88,9 @@ static double slope(void* vv) {
         }
         return (n*sigxy - sigx*sigy)/(n*sigx2 - sigx*sigx);
 }
-unsigned int __uitrunc(x) double x; { return (unsigned)(int)(x);}
+unsigned int __uitrunc(double x) {
+  return (unsigned)(int)(x);
+}
 ENDVERBATIM
  
 :* v1.vslope(v2) does a linear regression, using v2 as the x-coords
@@ -301,7 +306,7 @@ static double fewind(void* vv) {
         for (j=0;j<num;j++) {
           for (i=0;i<ni;i++) x[i]=vvo[j][scr[i]];    
           for (i=0;i<ni;i++) vvo[j][i]=x[i];   
-          vv=vector_arg(j+2); vector_resize(vv, ni);
+          vv=vector_arg(j+2); vector_resize((IvocVect*)vv, ni);
         }
 	return ni;
 }
@@ -320,7 +325,7 @@ static double insct(void* vv) {
         if (k==nx) { 
           printf("\tinsct WARNING: ran out of room: %d\n",k);
           for (;i<nv1;i++,j=0) for (;j<nv2;j++) if (v1[i]==v2[j]) k++;
-        } else { vector_resize(vv, k); } /* can't resize to make bigger */
+        } else { vector_resize((IvocVect*)vv, k); } /* can't resize to make bigger */
 	return (double)k;
 }
 ENDVERBATIM
@@ -342,6 +347,7 @@ static double cvlv(void* vv) {
       if (k>0 && k<nsrc-1) x[i]+=filt[j]*src[k];
     }
   }
+  return 0.;
 }
 ENDVERBATIM
 
@@ -361,6 +367,7 @@ static double intrp(void* vv) {
     for (i=la+1; i<lb; i++) x[i]= a + (b-a)/(lb-la)*(i-la);
     a=b; la=lb;
   }
+  return 0.;
 }
 ENDVERBATIM
 
@@ -400,7 +407,7 @@ static double nind(void* vv) {
           }
           for (k=last+1;k<nx;k++,m++) { x[m]=vvo[j][k]; }
           for (i=0;i<c;i++) vvo[j][i]=x[i];   
-          vv=vector_arg(j+2); vector_resize(vv, c);
+          vv=vector_arg(j+2); vector_resize((IvocVect*)vv, c);
         }
 	return c;
 }
@@ -557,6 +564,7 @@ static double bpeval(void* vv) {
   } else {
     for (i=0;i<n;i++) vo[i]=outp[i]*(1.-1.*outp[i])*del[i];
   }
+  return 0.;
 }
 ENDVERBATIM
  
@@ -818,13 +826,13 @@ static double frd(void* vv) {
 #else
         f = hoc_obj_file_arg(1);
 #endif
-        num = (int)*getarg(2);
-        size = (int)*getarg(3);
-        xf = (char *)malloc(num * size);
-        if (num!=nx) { hoc_execerror("Correct vector size ", 0); }
-        fread(xf, num, size, f);
-        for (i=0;i<num;++i) x[i] = (double)xf[i];
-	return;
+  num = (int)*getarg(2);
+  size = (int)*getarg(3);
+  xf = (char *)malloc(num * size);
+  if (num!=nx) { hoc_execerror("Correct vector size ", 0); }
+  fread(xf, num, size, f);
+  for (i=0;i<num;++i) x[i] = (double)xf[i];
+  return 0.;
 }
 ENDVERBATIM
 
@@ -940,9 +948,7 @@ next()
 	x[0] = LOW(p[0]);
 }
 
-void
-my_srand48(seedval)
-long seedval;
+void my_srand48(long seedval)
 {
 	SEED(X0, LOW(seedval), HIGH(seedval));
 }
