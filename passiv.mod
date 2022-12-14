@@ -6,8 +6,6 @@ UNITS {
 	(mA) = (milliamp)
 }
 
-INDEPENDENT { v FROM -100 TO 50 WITH 50	(mV) }
-
 NEURON {
 	SUFFIX Pass
 	NONSPECIFIC_CURRENT i
@@ -19,7 +17,10 @@ PARAMETER {
 	erev = -70	(mV)
 }
 
-ASSIGNED { i	(mA/cm2)}
+ASSIGNED { 
+	i	(mA/cm2)
+	v 	(mV)
+}
 
 BREAKPOINT {
 	i = g*(v - erev)
