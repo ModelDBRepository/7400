@@ -18,6 +18,7 @@ from vecst.mod.orig) to allow running the model under mswin and on the
 mac.  The most significant being the incorporation of a free version of
 srand/drand from
 http://www.mit.edu/afs/athena/activity/c/cgs/src/math/drand48/
+or https://www.mit.edu/search/?q=srand%2Fdrand#gsc.tab=0&gsc.q=srand%2Fdrand&gsc.page=1
  Under mswin, this model can only be run using NEURON version 5.2
 2002/02/28 or later since it makes use of calls to sprintf and
 hoc_obj_file_arg which were not exported by earlier versions.  On a MAC
